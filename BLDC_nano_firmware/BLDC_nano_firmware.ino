@@ -46,59 +46,6 @@
 
 #include "tables.h"
 
-byte* table_pwm_reg[3]
-{
-  OCR1B,
-  OCR2A,
-  OCR1A,
-};
-// table mapping sensor input states to PWM channels
-byte table_pwm_chan[8]
-{
-  /*
-  [0b001] = 1,
-  [0b011] = 2,
-  [0b010] = 2,
-  [0b110] = 3,
-  [0b100] = 3,
-  [0b101] = 1,
-  [0b000] = 0,
-  [0b111] = 0,*/
-  0,//[0b000] = 0,
-  1,//[0b001] = 1,
-  2,//[0b010] = 2,
-  2,//[0b011] = 2,
-  3,//[0b100] = 3,
-  1,//[0b101] = 1,
-  3,//[0b110] = 3,
-  0,//[0b111] = 0,
-};
-
-// table mapping sensor input states to channels to be shut down
-byte table_sd_chan[8]
-{
-  /*
-  [0b001] = (1<<2),
-  [0b011] = (1<<1),
-  [0b010] = (1<<3),
-  [0b110] = (1<<2),
-  [0b100] = (1<<1),
-  [0b101] = (1<<3),
-  [0b000] = 0,
-  [0b111] = 0,
-  */
-  0,     //  [0b000] = 0,
-  (1<<2),//[0b001] = (1<<2),
-  (1<<3),//[0b010] = (1<<3),
-  (1<<1),//[0b011] = (1<<1),
-  (1<<1),//[0b100] = (1<<1),
-  (1<<3),//[0b101] = (1<<3),
-  (1<<2),//[0b110] = (1<<2),
-  0,     //[0b111] = 0,
-};
-
-static byte set_pwm = 128;
-
 
 void setup() {
   // put your setup code here, to run once:
@@ -121,13 +68,13 @@ void setup() {
   Serial.setTimeout(1);
   /* configure timer1 and timer2 for 8bit pwm at a frequency of 10kHz or greater
    *  (base clock 2.4MHz or greater)
-   *  based on a 12Mhz clock (CH340 based Nano)
+   *  based on a 16Mhz clock (CH340 based Nano, was expecting it to be 12Mhz, but is infact 16)
    *  
    *  Timer1 prescaler is 0,1,8,64,256,1024,ext.v, ext.^
    *  Timer2 prescaler is 0,1,8,32,64,128,256,1024
    *  these aren't all that useful
-   *  1 gives 46875Hz PWM frequncy
-   *  8 gives  5859Hz PWM frequncy, which is double the highest expected operating frequency
+   *  1 gives 62500Hz PWM frequncy
+   *  8 gives  7813Hz PWM frequncy, which is double the highest expected operating frequency
    *  
    *  base frequency can be reduced by 2 using phase correct pwm
    *  assuming FETs are PSMN3R4-30PL
@@ -144,26 +91,49 @@ void setup() {
    *  or so I assume, as the turn on delay for a fet is time taken to charge the gate
    *  to the threshold voltage, and the rise time is that taken to charge the gate to saturation
    */
+//these frequencies are for phase correct pwm
+#define TMR1_PRESCALE_31kHz   1
+#define TMR1_PRESCALE_3906Hz  2
+#define TMR1_PRESCALE_977Hz   3
+#define TMR1_PRESCALE_122Hz   4
+#define TMR1_PRESCALE_31Hz    5
+#define TMR1_PRESCALE_EXTF    6 //T1 is D5
+#define TMR1_PRESCALE_EXTR    7 //T1 is D5
 
-#define TMR1_PRESCALE_47kHz 1
-#define TMR1_PRESCALE_6kHz  2
-#define TMR1_PRESCALE_732Hz  3
-#define TMR1_PRESCALE_138Hz  4
-#define TMR1_PRESCALE_45Hz  5
-#define TMR1_PRESCALE_EXTF  6 //T1 is D5
-#define TMR1_PRESCALE_EXTR  7 //T1 is D5
+#define TMR2_PRESCALE_31kHz   1
+#define TMR2_PRESCALE_3906Hz  2
+#define TMR2_PRESCALE_1953Hz  3
+#define TMR2_PRESCALE_977Hz   4
+#define TMR2_PRESCALE_244Hz   5
+#define TMR2_PRESCALE_122Hz   6
+#define TMR2_PRESCALE_31Hz    7
 
-#define TMR2_PRESCALE_47kHz 1
-#define TMR2_PRESCALE_6kHz  2
-#define TMR2_PRESCALE_1465Hz  3
-#define TMR2_PRESCALE_732Hz  4
-#define TMR2_PRESCALE_366Hz  5
-#define TMR2_PRESCALE_138Hz  6
-#define TMR2_PRESCALE_45Hz  7
+#define TMR_FREQ_31kHz    31250.0
+#define TMR_FREQ_3906Hz   3906.25
+#define TMR_FREQ_1953Hz   1953.125
+#define TMR_FREQ_977Hz    976.5625
+#define TMR_FREQ_244Hz    244.140625
+#define TMR_FREQ_122Hz    122.0703125
+#define TMR_FREQ_31Hz     30.517578125
 
+#define TMR_INTus_31kHz    32
+#define TMR_INTus_3906Hz   256
+#define TMR_INTus_1953Hz   1024
+#define TMR_INTus_977Hz    2048
+#define TMR_INTus_244Hz    4096
+#define TMR_INTus_122Hz    8192
+#define TMR_INTus_31Hz     32768
 
-#define TMR1_PRESCALE       TMR1_PRESCALE_45Hz
-#define TMR2_PRESCALE       TMR2_PRESCALE_45Hz
+#define TMR1_PRESCALE       TMR1_PRESCALE_3906Hz
+#define TMR2_PRESCALE       TMR2_PRESCALE_3906Hz
+
+  // mask bit b in int m
+  #define MASK(b,m) ((m)&_BV(b))
+  // select bit r  if bit b of int m is set
+  #define SELECT(r,b,m) ((_BV(r))*(MASK(b,m)!=0))
+
+  #define T1M(r,b)  SELECT(r,b,TMR1_MODE)
+  #define T2M(r,b)  SELECT(r,b,TMR2_MODE)
 
 
 /*  timer 2
@@ -177,7 +147,7 @@ void setup() {
  *  6 Res.
  *  7 Fast PWM, top OCR2A
  */
-#define TMR2_MODE 3
+#define TMR2_MODE 1
 
 /* timer 1
  *  WGM:
@@ -188,7 +158,7 @@ void setup() {
  *  ...
  */
 
- #define TMR1_MODE 5
+ #define TMR1_MODE 1
 /*
  *  COM:
  *  0 disabled
@@ -200,7 +170,16 @@ void setup() {
  */
 
  #define TMR_COM 3
+ #define TMR_COM_VREF 2
 
+ #define TCP(r,b)  SELECT(r,b,TMR_COM)
+ #define TCV(r,b)  SELECT(r,b,TMR_COM_VREF)
+ 
+ #define TMR1_COMA ( TCP(COM1A1,1) | TCP(COM1A0,0) )
+ #define TMR1_COMB ( TCP(COM1B1,1) | TCP(COM1B0,0) )
+ #define TMR2_COMA ( TCP(COM2A1,1) | TCP(COM2A0,0) )
+ #define TMR2_COMB ( TCV(COM2B1,1) | TCV(COM2B0,0) )
+ 
 /* configure pins first */
 
   /* 
@@ -212,7 +191,7 @@ void setup() {
    #define pin_OC1A 9
    #define pin_OC1B 11
    #define pin_OC2A 10
-   #define pin_OC1B 3
+   #define pin_OC2B 3
    #define OC1A_port PORTB
    #define OC1A_pin  PORTB1
    #define OC1B_port PORTB
@@ -226,13 +205,13 @@ void setup() {
   pinMode(pin_OC1A, OUTPUT);
   pinMode(pin_OC1B, OUTPUT);
   pinMode(pin_OC2A, OUTPUT);
-  pinMode(pin_OC1B, OUTPUT);
+  pinMode(pin_OC2B, OUTPUT);
 
   //set the state of the otput pins when pwm is 0, which is LOW when using non inverted output
   digitalWrite(pin_OC1A, TMR_COM&1);
   digitalWrite(pin_OC1B, TMR_COM&1);
   digitalWrite(pin_OC2A, TMR_COM&1);
-
+  digitalWrite(pin_OC2A, TMR_COM_VREF&1);
 
   /* for dev purposes,
    *  we can clock Timer1 by soft toggling it's input pin
@@ -246,25 +225,21 @@ void setup() {
   pinMode(pin_Button, INPUT_PULLUP); //button input to simulate over current event
   digitalWrite(pin_Button, HIGH);
 
-#define OC1A_EN() TCCR1A |= (TMR_COM<<6)
-#define OC1A_DIS() TCCR1A &= ~(TMR_COM<<6)
-#define OC1B_EN() TCCR1A |= (TMR_COM<<4)
-#define OC1B_DIS() TCCR1A &= ~(TMR_COM<<4)
-#define OC2A_EN() TCCR2A |= (TMR_COM<<6)
-#define OC2A_DIS() TCCR2A &= ~(TMR_COM<<6)
-#define OC2B_EN() TCCR2A |= (TMR_COM<<4)
-#define OC2B_DIS() TCCR2A &= ~(TMR_COM<<4)
+#define OC1A_EN() TCCR1A |= (TMR1_COMA)
+#define OC1A_DIS() TCCR1A &= ~(TMR1_COMA)
+#define OC1B_EN() TCCR1A |= (TMR1_COMB)
+#define OC1B_DIS() TCCR1A &= ~(TMR1_COMB)
 
-    /*        COM2A:2 COM2B:2 N/A:2 WGM2:2*/
-  TCCR1A = (TMR_COM<<6) | (TMR_COM<<4) | TMR1_MODE;
-  /*        FOC2A FOC2B N/A WGM2H:2 CS2:3*/
-  TCCR1B = ((TMR1_MODE&0b1100)<<1) | (TMR1_PRESCALE);
-  /* N/A:2 ICIE N/A:2 OCIE1B OCIE1A TOIE1 */
+#define OC2A_EN() TCCR2A |= (TMR2_COMA)
+#define OC2A_DIS() TCCR2A &= ~(TMR2_COMA)
+#define OC2B_EN() TCCR2A |= (TMR2_COMB)
+#define OC2B_DIS() TCCR2A &= ~(TMR2_COMB)
 
-  /*        COM2A:2 COM2B:2 N/A:2 WGM2:2*/
-  TCCR2A = (TMR_COM<<6) | (TMR_COM<<4) | TMR2_MODE;
-  /*        FOC2A FOC2B N/A:2 WGM2H CS2:3*/
-  TCCR2B = ((TMR1_MODE&0b100)<<1) | (TMR2_PRESCALE);
+  TCCR1A = T1M(WGM11,1) | T1M(WGM10,0);
+  TCCR1B = T1M(WGM13,3) | T1M(WGM12,2);
+
+  TCCR2A = T2M(WGM21,1) | T2M(WGM20,0);
+  TCCR2B = T2M(WGM22,2);
 
 #define TMR1_OFFSET 2  //set this ensure TMR1 and TMR2 overflow by the same amount - measure by having one tof set the led, and one clear it, adjust until it switches from mostly on to mostly off, with timer2 having the off command
 
@@ -275,6 +250,11 @@ void setup() {
   TCCR1B |= (TMR1_PRESCALE);
 
   sin_en(); //enable sin wave player
+
+  OC1A_EN();
+  OC1B_EN();
+  OC2A_EN();
+  OC2B_EN();
 }
 static byte led = 0;
 static byte button = 0;
@@ -291,13 +271,14 @@ static unsigned int pwm1 = 0; //these are unsigned so we can multiply and left s
 static unsigned int pwm2 = 0;
 static unsigned int pwm3 = 0;
 static byte do_report_sin = true;
-static unsigned int pwm_max = 255; //this needs its own table to match frequency to peak voltage. current is minimised by having this match back emf in amplitude and frequency
+static byte pwm_max = 255; //this needs its own table to match frequency to peak voltage. current is minimised by having this match back emf in amplitude and frequency
 
 void loop() {
   // put your main code here, to run repeatedly:
 
   /* clock at 50 hz to get 1 pwm cycle every 10 seconds */ 
-  delay(1);
+  delay(50);
+  pwm_max++;
 
   /* tick the timer */
   //digitalWrite(pin_T1,HIGH); 
@@ -326,25 +307,45 @@ void loop() {
   }
 
   if (Serial.available() > 0) {
-    // read the incoming byte:
     int new_rate = Serial.parseInt();
-
-    
-
-    if(new_rate == 0)
+    if(do_sin)
     {
-      sin_dis();
+      // read the incoming byte:
+      
+      if(new_rate < 0)
+      {
+        sin_dis();
+        Serial.println("setting pwm");
+      }
+      else
+      {
+        if (new_rate > sizeof(sin_table)/24) new_rate = sizeof(sin_table)/24;
+        sin_rate = new_rate;
+        sin_en();
+      }
+      // say what you got:
+      Serial.println(new_rate, DEC);
     }
     else
     {
-      if (new_rate > sizeof(sin_table)/24) new_rate = sizeof(sin_table)/24;
-      sin_rate = new_rate;
-      sin_en();
+      if(new_rate < 0)
+      {
+        Serial.println("setting phase rate");
+        sin_en();
+      }
+      else
+      {
+        //set the maximum sinusoidal pwm with the upper byte
+        pwm_max = new_rate>>8;
+        new_rate &= 255;
+        
+        pwmWrite(0, new_rate);
+        //pwmWrite(1, new_rate);
+        //pwmWrite(2, new_rate);
+        //pwmWrite(3, new_rate);
+      }
+      
     }
-
-    // say what you got:
-    Serial.println(new_rate, DEC);
-    
     
   }
 
@@ -366,6 +367,7 @@ void loop() {
     Serial.print(sin_pos3);
     Serial.print("] ");
     Serial.println(pwm3);
+    Serial.println();
   }
   
 
@@ -404,9 +406,8 @@ void pwmWrite(byte channel, byte value)
   switch(channel)
   {
     case 0: //OC2B, current limit reference
-      if(do_sin) break; //no write whem pwm running
-      pwm3 = value;
-      TIMSK1 |= _BV(TOIE1);//enable the overflow interupt to update the pwm
+      OCR2B = value;
+      OC2B_EN();
       break;
     case 1: //OC1A, Phase A
       if(do_sin) break; //no write whem pwm running
@@ -454,8 +455,8 @@ ISR(TIMER1_OVF_vect)//,ISR_NAKED) //naked = nothing uses the stack
   // disable outputs where pwm value is zero
   if(pwm1 != 0)  {    OC1A_EN();  }
   else            {    OC1A_DIS();  }
-  if(pwm2 != 0)  {    OC1B_EN();  }
-  else            {    OC1B_DIS();  }
+  //if(pwm2 != 0)  {    OC1B_EN();  }
+  //else            {    OC1B_DIS();  }
   if(pwm3 != 0)  {    OC2A_EN();  }
   else            {    OC2A_DIS();  }
   
@@ -488,6 +489,9 @@ ISR(TIMER1_OVF_vect)//,ISR_NAKED) //naked = nothing uses the stack
     pwm3 = SIN(sin_pos3);
 
     //multiply each pwm value by the maximum
+    pwm1 = ((pwm1 * pwm_max) + pwm_max)>>8;
+    pwm2 = ((pwm2 * pwm_max) + pwm_max)>>8;
+    pwm3 = ((pwm3 * pwm_max) + pwm_max)>>8;
 
     // set the next pwm states
     pwm1_state = pwm1 != 0;
