@@ -3,8 +3,6 @@ void testpwm(byte tcnt1)
    /* to better understand the problem with a cycle being on too long,
    *  toggle between low and off every other cycle,
    *  and each time, change the time at which the command is issueed
-   *  but first, check that inverting the polarity doesnt fix it
-   *  
    *  results: the problem is worse when updating just after TCNT=0
    *  and get progressively bettwer towards TCNT=255
    */
