@@ -148,5 +148,4 @@
 
     #define TMR1_OFFSET 2  //set this ensure TMR1 and TMR2 overflow by the same amount - measure by having one tof set the led, and one clear it, adjust until it switches from mostly on to mostly off, with timer2 having the off command
 
-
 #endif //__PWM_H__

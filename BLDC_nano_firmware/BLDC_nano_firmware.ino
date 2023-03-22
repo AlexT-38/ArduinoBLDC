@@ -14,8 +14,8 @@
   hall sensor input
   no. of poles is unkown, presumed to be 4
 
-  maximum step rate, max rpm * poles * 6
-  100hz * 4 * 6 = 2400Hz, 416us
+  maximum step rate, max rpm * poles/2 * 6
+  100hz * 2 * 6 = 1200Hz, 832us
 
   pwm frequency needs to be at least 4x this, ie >=9600Hz
   8 bit pwm control should be sufficient for this simple system
@@ -47,57 +47,52 @@
 #include "tables.h"
 #include "pwm.h"
 
-static byte led = 0;
-static byte button = 0;
-
-static byte do_sin = true;
-static unsigned int sin_pos1 = 0;
-static unsigned int sin_pos2 = SEG_OFFSET;
-static unsigned int sin_pos3 = SEG_OFFSET*2;
-static byte sin_rate = 1;
-static byte pwm1_state = 1;
-static byte pwm2_state = 1;
-static byte pwm3_state = 1;
-static unsigned int pwm1 = 0; //these are unsigned so we can multiply and left shift in place
-static unsigned int pwm2 = 0;
-static unsigned int pwm3 = 0;
-static byte do_report_sin = true;
-static byte pwm_max = 255; //this needs its own table to match frequency to peak voltage. current is minimised by having this match back emf in amplitude and frequency
-
-void setup() {
-  // put your setup code here, to run once:
 #define setBIT(port, pin) port|=_BV(pin)
 #define clrBIT(port, pin) port&=~_BV(pin)
 #define togBIT(port, pin) port^=_BV(pin)
 
-#define pin_LED 13
+#define REPORT_TIME_ms 100
+
+static byte led = 0;
+static byte button = 0;
+
+static byte do_sin = true;
+static unsigned int sin_hold_pos = SEG_SIZE;
+static unsigned int sin_pos1 = 0;
+static unsigned int sin_pos2;
+static unsigned int sin_pos3;
+static byte sin_rate = 1;
+static byte pwm1_state = 1;
+static byte pwm2_state = 1;
+static byte pwm3_state = 1;
+static unsigned int pwm1 = 0; 
+static unsigned int pwm2 = 0;
+static unsigned int pwm3 = 0;
+static byte do_report_sin = false;
+static byte pwm_max = 255;
+static unsigned int sim_interval_us = 20000;
+
+
+void setup() 
+{
+
+#define pin_LED 13    //on board LED
 #define LED_port PORTB
 #define LED_pin PORTB5
 #define setLED() setBIT(LED_port, LED_pin)
 #define clrLED() clrBIT(LED_port, LED_pin)
 #define togLED() togBIT(LED_port, LED_pin)
-
+  pinMode(pin_LED,OUTPUT);
+  
 #define pin_SD 8    //inverter shut down pin
 #define SD_port PORTB
 #define SD_pin PORTB0
-
 #define DRIVE_EN() clrBIT(SD_port, SD_pin)
 #define DRIVE_DIS() setBIT(SD_port, SD_pin)
-
   pinMode(pin_SD,OUTPUT);
   DRIVE_DIS();
 
-  pinMode(pin_LED,OUTPUT);
-
-  /* for dev purposes,
-   *  we can clock Timer1 by soft toggling it's input pin
-   *  so that we can visually inspct the output waveform at very low frequencies
-   */
-  #define pin_T1 5
-//  pinMode(pin_T1, OUTPUT); //T1 input
-//  digitalWrite(pin_T1, LOW);
-
-  #define pin_Button 14
+#define pin_Button 2
   pinMode(pin_Button, INPUT_PULLUP); //button input to simulate over current event
   digitalWrite(pin_Button, HIGH);
 
@@ -108,26 +103,20 @@ void setup() {
 //  but all the vital code should be interrupt based
 //  so no timeout is needed
 
+  sensors_init();
+  pwmInit();
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
-
-  /* clock at 50 hz to get 1 pwm cycle every 10 seconds */ 
-  delay(50);
-  pwm_max++;
-
-  /* tick the timer */
-  //digitalWrite(pin_T1,HIGH); 
-  //digitalWrite(pin_T1,LOW);
 
   static byte led_counter = 0;
-  if(++led_counter>=25)
+  if(!++led_counter)
   {
-//    togLED();
-    led_counter = 0;
+    togLED();
   }
 
+  /* simulate sensor signals */
+  sensor_sim(sim_interval_us);
 
   /* check for simulated overcurrent */
   if(digitalRead(pin_Button) == LOW)
@@ -143,8 +132,12 @@ void loop() {
     button=HIGH;
   }
 
+  /* check for serial input */
   if (Serial.available() > 0) {
-    int new_rate = Serial.parseInt();
+    unsigned int new_rate_us = Serial.parseInt();
+    sim_interval_us = new_rate_us;
+    Serial.print("simulated sensor interval: ");Serial.println(sim_interval_us, DEC);
+    /*
     if(do_sin)
     {
       // read the incoming byte:
@@ -183,29 +176,36 @@ void loop() {
       }
       
     }
-    
+    */
   }
 
- 
+  /* check for debug and performance reports */
 
   if (do_report_sin)
   {
-    do_report_sin =false;
-    togLED();
-    Serial.print("sin(idx1): [");
-    Serial.print(sin_pos1);
-    Serial.print("] ");
-    Serial.println(pwm1);
-    Serial.print("sin(idx2): [");
-    Serial.print(sin_pos2);
-    Serial.print("] ");
-    Serial.println(pwm2);
-    Serial.print("sin(idx3): [");
-    Serial.print(sin_pos3);
-    Serial.print("] ");
-    Serial.println(pwm3);
-    Serial.println();
+    static unsigned int last_time_ms = 0;
+    unsigned int this_time_s = millis();
+    if (this_time_s-last_time_ms > 100){
+      do_report_sin =false;
+      togLED();
+      Serial.print("sin(idx1): [");
+      Serial.print(sin_pos1);
+      Serial.print("] ");
+      Serial.println(pwm1);
+      Serial.print("sin(idx2): [");
+      Serial.print(sin_pos2);
+      Serial.print("] ");
+      Serial.println(pwm2);
+      Serial.print("sin(idx3): [");
+      Serial.print(sin_pos3);
+      Serial.print("] ");
+      Serial.println(pwm3);
+      Serial.println();
+    }
   }
   
+  print_perf_timer();
+  print_perf_timer2();
 
+  
 }

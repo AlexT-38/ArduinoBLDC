@@ -1,7 +1,6 @@
 /***************************************
  * handles the generation of pwm signals
  */
-
 /* enable the sin wave generator */
 void sin_en()
 {
@@ -18,9 +17,41 @@ void sin_dis()
  *  Updates the pwm values. 
  *  does quite a lot of stuff in an isr, so keep things as simple as posible.
  *  do not use local variables so we can use 'naked' mode
+ *  
+ *  at the desired 31kHz base pwm rate, this interrupt would be called every 32us
+ *  this is 512 instruction cycles (62.5ns each)
+ *  
+ *  this function should be able to complete in significantly less time,
+ *  to account for other interrupts taking up cycles.
+ *  infact, all interrupts must be capable of executing within this time
+ *  
+ *  presently typical timeforTIMER1_OVF is 14.5us
+ *  which may be acceptable, but ideally would be lower
+ *  
+ *  it is occasionally 20.5us, which is probably TMR0 ISR,
+ *  as we are measuring from actual TMR1 ovf, not start of the ISR
+ *  
  */
+static byte performance_timer = 0;
+static bool do_perf_timer_print = false;
+void print_perf_timer()
+{
+  if(do_perf_timer_print & true)
+  {
+    static unsigned int last_time_ms;
+    unsigned int this_time_ms=millis();
+    if((this_time_ms- last_time_ms) >REPORT_TIME_ms )
+    {
+      last_time_ms= this_time_ms;
+      Serial.print("Perf1: ");
+      Serial.println( performance_timer);
+      do_perf_timer_print = false;
+    }
+  }
+}
 ISR(TIMER1_OVF_vect)//,ISR_NAKED) //naked = nothing uses the stack
 {
+  
   // write the pwm values
   OCR1A = pwm1;
   OCR1B = pwm2;
@@ -29,13 +60,13 @@ ISR(TIMER1_OVF_vect)//,ISR_NAKED) //naked = nothing uses the stack
   // disable outputs where pwm value is zero
   if(pwm1 != 0)  {    OC1A_EN();  }
   else            {    OC1A_DIS();  }
-  //if(pwm2 != 0)  {    OC1B_EN();  }
-  //else            {    OC1B_DIS();  }
+  if(pwm2 != 0)  {    OC1B_EN();  }
+  else            {    OC1B_DIS();  }
   if(pwm3 != 0)  {    OC2A_EN();  }
   else            {    OC2A_DIS();  }
   
-  //step through the sin tables for each phase
-  if(do_sin)
+  //step through the sin tables for each phase, hold if the next step would take us past the next seg
+  if(do_sin && ((sin_pos1+sin_rate) > sin_hold_pos))
   {
     /* we need some way of syncing with the sensor state changes
      *  this basically means jumping ahead if we are lagging behind
@@ -43,14 +74,28 @@ ISR(TIMER1_OVF_vect)//,ISR_NAKED) //naked = nothing uses the stack
      *  the indices in the sin table where sensor state changes should occur
      *  can be specified to give the correct phase advance for efficient running
      * 
+     *  it might be better to change the frequency gently, like a PLL
+     *  
+     *  this is handled in sensors tab
+     *  
      */
+
+
     
     //increment by rate
+    /*
     #define SIN_INC(x) x=x+sin_rate
     SIN_INC(sin_pos1);
     SIN_INC(sin_pos2);
     SIN_INC(sin_pos3);
+    */
+    sin_pos1 = sin_pos1 + sin_rate;
+    sin_pos2 = sin_pos1 + SEG_OFFSET;
+    sin_pos3 = sin_pos2 + SEG_OFFSET;
 
+    /* we can increase performance slightly by tabulating 2 whole sine waves,
+     * this would mean only needing to check for loop back 
+     */
     //loop back to the start on overflow
     #define SIN_MOD(x) if(x>=sin_table_size) x-=sin_table_size
     SIN_MOD(sin_pos1);
@@ -82,6 +127,8 @@ ISR(TIMER1_OVF_vect)//,ISR_NAKED) //naked = nothing uses the stack
   }
   
   //reti(); //required with ISR_NAKED
+  performance_timer = TCNT1;
+  do_perf_timer_print = true;
 }
 
 void pwmInit()

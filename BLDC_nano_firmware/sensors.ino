@@ -2,20 +2,27 @@
  * handles reading the position sensors
  * also reconfigures TMR0 for measuring intervals
  */
+#define SESNOR_SIM
 
-#define INTERVAL_MAX (((UINT16_MAX/6)&0xFF00)-0x100)
+static const byte sensor_seq[] = { 0b001, 0b011, 0b010, 0b110, 0b100, 0b101};
+static const byte sensor_decode[] = { 0xFF, 0, 2, 1, 4, 5, 3, 0xFF };
+byte sensor_position;
 
-unsigned int intervals_lsb[6] = {INTERVAL_MAX,INTERVAL_MAX,INTERVAL_MAX,INTERVAL_MAX,INTERVAL_MAX,INTERVAL_MAX};
-unsigned int interval_lsb = INTERVAL_MAX*6;
-byte interval_idx;
-byte sensor_state;
-byte sensor_state_lt;
-byte tmr0_overflows;
+static unsigned int interval_us;
+unsigned int last_sensor_change_time_us = 0;
+
+// map sensor position to sin wave positions for each phase
+#define SPHASE(n)  (sin_table_size*n/6)
+unsigned int start_phase1_step[6] = {SPHASE(0),SPHASE(1),SPHASE(2),SPHASE(3),SPHASE(4),SPHASE(5)};
+
+/* adjust phase angle to control the motor */
+unsigned int phase_offset = 0;
+
 
 #define SENSOR_DDR      DDRC
-#define SENSOR_PORT     PINC
-#define SENSOR_PULL     PORTC
-#define SENSOR_PIN0      PORTC0
+#define SENSOR_PINS     PINC
+#define SENSOR_PORT     PORTC
+#define SENSOR_PIN0     PORTC0
 #define SENSOR_MASK     (_BV(SENSOR_PIN0)|_BV(SENSOR_PIN0+1)|_BV(SENSOR_PIN0+2))
 
 #define SENSOR_vect     PCINT0_vect
@@ -25,38 +32,23 @@ byte tmr0_overflows;
 #define SENSOR_EN()     (PCICR |= SENSOR_PCIE)
 #define SENSOR_DIS()    (PCICR &= ~SENSOR_PCIE)
 
-#define GET_SENSOR()    ((SENSOR_PORT&SENSOR_MASK) >> SENSOR_PIN0)
-/* the base resolution will be 1/clk, with clk= 16Mhz/prescale
- *  16Mhz: 
- */
-#define TMR0_PRESCALE_63NS   1
-#define TMR0_PRESCALE_500NS  2
-#define TMR0_PRESCALE_4US    3
-#define TMR0_PRESCALE_16US   4
-#define TMR0_PRESCALE_64US   5
+#define GET_SENSOR()    ((SENSOR_PINS&SENSOR_MASK) >> SENSOR_PIN0)
 
-//closest to 32us is 16us
-#define TMR0_PRESCALE       TMR0_PRESCALE_16US
- 
-#define TMR0_DIS()  TCCR0A = 0
-#define TMR0_EN()   TCCR0A = TMR0_PRESCALE
-#define TMR0_RST()  TCNT0 = 0;  tmr0_overflows = 0
 
 void sensors_init()
 {
-  //set the TMR0 registers here
-  TMR0_RST(); 
-  TMR0_EN();
-  //enable overflow interrupt
-  TIMSK0 = _BV(TOIE0); 
-
   //set the sensor input pin config
+#ifndef SESNOR_SIM
   SENSOR_DDR &= ~SENSOR_MASK;
-  SENSOR_PULL |= SENSOR_MASK;
-  
+  SENSOR_PORT |= SENSOR_MASK;
+#else
+  SENSOR_DDR |= SENSOR_MASK;
+  SENSOR_PORT &= ~SENSOR_MASK;
+
+#endif  
+
   //get the initial sensor state
-  sensor_state = GET_SENSOR();
-  sensor_state_lt = 0;
+  sensor_position = sensor_decode[GET_SENSOR()];
   
   //set the PCINT interrupt registers here
   SENSOR_PCMSK = SENSOR_MASK;
@@ -64,6 +56,26 @@ void sensors_init()
   SENSOR_EN();
 }
 
+void sensor_sim(unsigned int interval_us)
+{
+  if(interval_us == 0) return;
+  #ifdef SESNOR_SIM
+  static unsigned int last_time_us = 0;
+  static byte sequence_idx = 0;
+  unsigned int this_time_us = micros();
+  if((this_time_us-last_time_us) > interval_us)
+  {
+    byte port = SENSOR_PORT;
+    port &= ~SENSOR_MASK;
+    port |= (sensor_seq[sequence_idx])<<SENSOR_PIN0;
+    SENSOR_PORT = port;
+
+    Serial.print(" SQ: "); Serial.println(0x10|GET_SENSOR(),BIN);
+    if(++sequence_idx >= 6) sequence_idx = 0;
+    last_time_us = this_time_us;
+  }
+  #endif 
+}
 /* we need to measure the time bewteen each interrupt
  *  averaged over the last full electrical cycle
  *  it may turn out this is overly complex
@@ -71,38 +83,61 @@ void sensors_init()
  *  may turn out to be required
  *  to keep the isr tight
  */
+static byte performance_timer2 = 0;
+static bool do_perf_timer2_print = false;
+void print_perf_timer2()
+{
+  if(do_perf_timer2_print)
+  {
+    static unsigned int last_time_ms;
+    unsigned int this_time_ms=millis();
+    if((this_time_ms- last_time_ms) >REPORT_TIME_ms )
+    {
+      Serial.print("Perf2: ");
+      Serial.println(performance_timer2);
+      do_perf_timer2_print = false;
+    }
+  }
+}
+/* pin change interrupt doesnt seem to be working... */
 ISR(SENSOR_vect)//, ISR_NAKED)
 {
-  /* stop the timer */
-  //TMR0_DIS();
-  /* deduct the oldest time */
-  interval_lsb -= intervals_lsb[interval_idx];
-  /* store the newest time */
-  intervals_lsb[interval_idx] = TCNT0 + tmr0_overflows;
-  /* clamp the value to the minimum */
-  intervals_lsb[interval_idx] = intervals_lsb[interval_idx] > STEP_RATE_MINIMUM_lsb ? intervals_lsb[interval_idx] : STEP_RATE_MINIMUM_lsb;
-  /* reset the timer */
-  TMR0_RST();            //we could offset TCNT0 to account for the ISR overhead, but with a resoultion of 16us, ISR should always complete before this can be an issue
-  TMR0_EN();
+  performance_timer2 = TCNT1;
   /* fetch the latest sensor value */
-  //sensor_state_lt = sensor_state;
-  sensor_state = GET_SENSOR();
-  /* add the new time to the total */
-  interval_lsb += intervals_lsb[interval_idx];
-  /* increment the buffer index */
-  if(++interval_idx>=6) interval_idx =0;
+  sensor_position = sensor_decode[GET_SENSOR()];
+  /* check for a valid state */
+  if(sensor_position != 0xff)
+  {
+ 
+    unsigned int time_now_us = micros();
+    interval_us = time_now_us - last_sensor_change_time_us;
+    last_sensor_change_time_us = time_now_us;
+    /* clamp to range */
+    interval_us = interval_us>STEP_RATE_MINIMUM_us?interval_us:STEP_RATE_MINIMUM_us;
+    interval_us = interval_us<STEP_RATE_MAXIMUM_us?interval_us:STEP_RATE_MAXIMUM_us;
+    /* fetch new pwm values */
+    sin_rate = STEP_RATE_us(interval_us);
+    pwm_max = PWM_RATE_us(interval_us);
 
-  /* fetch new pwm values */
-  sin_rate = STEP_RATE_lsb(interval_lsb);
-  pwm_max = PWM_RATE_lsb(interval_lsb);
-  
+    //synchronise the sin wave generators with the sensor position
+    sin_pos1 = start_phase1_step[sensor_position] + phase_offset;
+    
+    //wrap phase around
+    sin_pos1 = sin_pos1>sin_table_size?sin_pos1-sin_table_size:sin_pos1;
+
+    //next seg position. note no wrap around
+    sin_hold_pos = sin_pos1 + SEG_SIZE;
+
+    DRIVE_EN(); //ensure drive is enabled
+    sin_en(); //ensure waveform generator is enabled
+  }
+  else
+  {
+    /* shut down the drive when the sensor inputs are invalid */
+    DRIVE_DIS();
+    sin_dis();
+  }
+  performance_timer2 = TCNT1 - performance_timer2;
+  do_perf_timer2_print = true;
   //reti();   //required with ISR_NAKED
-}
-//overwriting TMR0_OVF_vect requires altering wiring.h, see https://forum.arduino.cc/t/overriding-arduino-interrupt-handlers/15416/4
-/* we use tmr0 to measure time in the same resolution as the lookup tables */
-ISR(TIMER0_OVF_vect, ISR_NAKED)
-{
-  /* count up to the maximum then turn off */
-  if(++tmr0_overflows==(INTERVAL_MAX>>8)) TMR0_DIS();
-  reti();   //required with ISR_NAKED
 }

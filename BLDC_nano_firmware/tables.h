@@ -42,7 +42,7 @@
 #define STEP_RATE_lsb(interval_lsb)    pgm_read_byte_near(step_rate_table + STEP_RATE_IDX_lsb(interval_lsb))
 
 #define STEP_RATE_TABLE_SIZE    (sizeof(step_rate_table))
-#define STEP_RATE_MAXIMUM_us    (STEP_RATE_MINIMUM_us+(STEP_RATE_TABLE_SIZE<<STEP_RATE_RES_us_LOG2))
+#define STEP_RATE_MAXIMUM_us    (STEP_RATE_MINIMUM_us+((STEP_RATE_TABLE_SIZE-1)<<STEP_RATE_RES_us_LOG2))
 
 /* note that it could be possible to maximise these values (to the nearest power of 2)
  * and dither out the fractional part by summing the remainder and adding whole units to the step size
