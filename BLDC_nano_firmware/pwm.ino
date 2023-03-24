@@ -31,26 +31,30 @@ void sin_dis()
  *  it is occasionally 20.5us, which is probably TMR0 ISR,
  *  as we are measuring from actual TMR1 ovf, not start of the ISR
  *  
+ *  measuring only the interupt, it is consistantly 26-27us.
+ *  this could be reduce with some careful optimising,
+ *  but realistically, this isn't practical.
+ *  
  */
-static byte performance_timer = 0;
+ byte performance_timer = 0;
 static bool do_perf_timer_print = false;
 void print_perf_timer()
 {
-  if(do_perf_timer_print & true)
+  if(do_perf_timer_print)
   {
     static unsigned int last_time_ms;
     unsigned int this_time_ms=millis();
-    if((this_time_ms- last_time_ms) >REPORT_TIME_ms )
+    if((this_time_ms- last_time_ms) > REPORT_TIME_ms )
     {
       last_time_ms= this_time_ms;
-      Serial.print("Perf1: ");
-      Serial.println( performance_timer);
+      Serial.print("Perf1 (us): ");  Serial.println( TMR1_TCK_TIME_us(performance_timer));
       do_perf_timer_print = false;
     }
   }
 }
-ISR(TIMER1_OVF_vect)//,ISR_NAKED) //naked = nothing uses the stack
+ISR(TIMER1_OVF_vect)
 {
+  performance_timer = TCNT1;
   
   // write the pwm values
   OCR1A = pwm1;
@@ -58,15 +62,28 @@ ISR(TIMER1_OVF_vect)//,ISR_NAKED) //naked = nothing uses the stack
   OCR2A = pwm3;
 
   // disable outputs where pwm value is zero
+  //*
   if(pwm1 != 0)  {    OC1A_EN();  }
   else            {    OC1A_DIS();  }
   if(pwm2 != 0)  {    OC1B_EN();  }
   else            {    OC1B_DIS();  }
   if(pwm3 != 0)  {    OC2A_EN();  }
   else            {    OC2A_DIS();  }
+//  */
+/*
+  OC1A_SET(pwm1 != 0);
+  OC1B_SET(pwm2 != 0);
+  OC2A_SET(pwm3 != 0);
+  */
+  //count time
+  tmr1_time_us += TMR1_OVF_TIME_us;
+  if(tmr1_time_us > STEP_RATE_MAXIMUM_us)
+  {
+    tmr1_time_us = STEP_RATE_MAXIMUM_us;
+  }
   
   //step through the sin tables for each phase, hold if the next step would take us past the next seg
-  if(do_sin && ((sin_pos1+sin_rate) > sin_hold_pos))
+  if(do_sin && ((sin_pos1+sin_rate) < sin_hold_pos))
   {
     /* we need some way of syncing with the sensor state changes
      *  this basically means jumping ahead if we are lagging behind
@@ -79,16 +96,8 @@ ISR(TIMER1_OVF_vect)//,ISR_NAKED) //naked = nothing uses the stack
      *  this is handled in sensors tab
      *  
      */
-
-
-    
+   
     //increment by rate
-    /*
-    #define SIN_INC(x) x=x+sin_rate
-    SIN_INC(sin_pos1);
-    SIN_INC(sin_pos2);
-    SIN_INC(sin_pos3);
-    */
     sin_pos1 = sin_pos1 + sin_rate;
     sin_pos2 = sin_pos1 + SEG_OFFSET;
     sin_pos3 = sin_pos2 + SEG_OFFSET;
@@ -108,27 +117,23 @@ ISR(TIMER1_OVF_vect)//,ISR_NAKED) //naked = nothing uses the stack
     pwm3 = SIN(sin_pos3);
 
     //multiply each pwm value by the maximum
-    pwm1 = ((pwm1 * pwm_max) + pwm_max)>>8;
-    pwm2 = ((pwm2 * pwm_max) + pwm_max)>>8;
-    pwm3 = ((pwm3 * pwm_max) + pwm_max)>>8;
+    #define MUL8(a,b) (((a*b)+b)>>8)
+    pwm1 = MUL8(pwm1, pwm_max);
+    pwm2 = MUL8(pwm2, pwm_max);
+    pwm3 = MUL8(pwm3, pwm_max);
 
-    // set the next pwm states
-    pwm1_state = pwm1 != 0;
-    pwm2_state = pwm2 != 0;
-    pwm3_state = pwm3 != 0;
-    
+   
     //do_report_sin = true;
 
-
+    performance_timer = TCNT1 - performance_timer;
+    do_perf_timer_print = true;
   }
   else
   {
-    TIMSK1 &= ~_BV(TOIE1); //disable interrupt
+    //TIMSK1 &= ~_BV(TOIE1); //disable interrupt
   }
   
-  //reti(); //required with ISR_NAKED
-  performance_timer = TCNT1;
-  do_perf_timer_print = true;
+
 }
 
 void pwmInit()

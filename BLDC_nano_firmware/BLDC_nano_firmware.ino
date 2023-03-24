@@ -17,6 +17,8 @@
   maximum step rate, max rpm * poles/2 * 6
   100hz * 2 * 6 = 1200Hz, 832us
 
+  
+
   pwm frequency needs to be at least 4x this, ie >=9600Hz
   8 bit pwm control should be sufficient for this simple system
   giving a base timer frequency of >=2.46MHz
@@ -62,15 +64,13 @@ static unsigned int sin_pos1 = 0;
 static unsigned int sin_pos2;
 static unsigned int sin_pos3;
 static byte sin_rate = 1;
-static byte pwm1_state = 1;
-static byte pwm2_state = 1;
-static byte pwm3_state = 1;
 static unsigned int pwm1 = 0; 
 static unsigned int pwm2 = 0;
 static unsigned int pwm3 = 0;
 static byte do_report_sin = false;
 static byte pwm_max = 255;
 static unsigned int sim_interval_us = 20000;
+static unsigned int tmr1_time_us = 0;
 
 
 void setup() 
@@ -98,21 +98,52 @@ void setup()
 
   Serial.begin(1000000);
   Serial.println("boop");
-//  Serial.setTimeout(1); 
-//  timeout probably wont work without TMR0 doing it's thing
-//  but all the vital code should be interrupt based
-//  so no timeout is needed
 
   sensors_init();
   pwmInit();
+
+  
 }
-
+extern unsigned int interval_us;
+extern const byte sensor_seq[];
+extern byte sensor_position;
+extern byte pwm_max, performance_timer2, performance_timer;
+#define PERF_REPORT_TOGETHER
 void loop() {
-
-  static byte led_counter = 0;
+  static int led_counter = 0;
   if(!++led_counter)
   {
-    togLED();
+    //togLED();
+    Serial.println();
+    Serial.println("-------------------");
+    Serial.print("sim interval(us): ");Serial.println(sim_interval_us);
+    Serial.print("interval(us): ");Serial.println(interval_us);
+    Serial.print("do_sin: ");Serial.println(do_sin);
+    Serial.print("sin_pos1: ");Serial.println(sin_pos1);
+    Serial.print("sin_rate: ");Serial.println(sin_rate);
+    Serial.print("pwm_max: ");Serial.println(pwm_max);
+    Serial.print("pwm1: ");Serial.println(pwm1);
+    Serial.print("pwm2: ");Serial.println(pwm2);
+    Serial.print("pwm3: ");Serial.println(pwm3);
+    byte sensor_bits = sensor_seq[sensor_position];
+    Serial.print("spos1: ");Serial.println((sensor_bits&1)!=0);
+    Serial.print("spos2: ");Serial.println((sensor_bits&2)!=0);
+    Serial.print("spos3: ");Serial.println((sensor_bits&4)!=0);
+    Serial.print("sensor_position: ");Serial.println(sensor_position);
+    //sanity check sensor:
+    //sensor_bits = PORTC&7;
+    //Serial.print("spin1: ");Serial.println((sensor_bits&1)!=0);
+    //Serial.print("spin2: ");Serial.println((sensor_bits&2)!=0);
+    //Serial.print("spin3: ");Serial.println((sensor_bits&4)!=0);
+    
+    Serial.println();
+
+    #ifdef PERF_REPORT_TOGETHER
+    Serial.print("Perf1 (us): ");  Serial.println( TMR1_TCK_TIME_us(performance_timer)  );
+    Serial.print("Perf2 (us): ");  Serial.println( TMR1_TCK_TIME_us(performance_timer2) );
+    Serial.println();
+    #endif
+    
   }
 
   /* simulate sensor signals */
@@ -135,48 +166,18 @@ void loop() {
   /* check for serial input */
   if (Serial.available() > 0) {
     unsigned int new_rate_us = Serial.parseInt();
-    sim_interval_us = new_rate_us;
-    Serial.print("simulated sensor interval: ");Serial.println(sim_interval_us, DEC);
-    /*
-    if(do_sin)
+    Serial.print('>'); Serial.println(new_rate_us);
+    if(new_rate_us > 0)
     {
-      // read the incoming byte:
-      
-      if(new_rate < 0)
-      {
-        sin_dis();
-        Serial.println("setting pwm");
-      }
-      else
-      {
-        if (new_rate > sizeof(sin_table)/24) new_rate = sizeof(sin_table)/24;
-        sin_rate = new_rate;
-        sin_en();
-      }
-      // say what you got:
-      Serial.println(new_rate, DEC);
+      sim_interval_us = new_rate_us;
+      Serial.print("simulated sensor interval: ");Serial.println(sim_interval_us, DEC);
+      sin_en();
     }
     else
     {
-      if(new_rate < 0)
-      {
-        Serial.println("setting phase rate");
-        sin_en();
-      }
-      else
-      {
-        //set the maximum sinusoidal pwm with the upper byte
-        pwm_max = new_rate>>8;
-        new_rate &= 255;
-        
-        pwmWrite(0, new_rate);
-        //pwmWrite(1, new_rate);
-        //pwmWrite(2, new_rate);
-        //pwmWrite(3, new_rate);
-      }
-      
+      sin_dis();
     }
-    */
+
   }
 
   /* check for debug and performance reports */
@@ -203,9 +204,9 @@ void loop() {
       Serial.println();
     }
   }
-  
+  #ifndef PERF_REPORT_TOGETHER
   print_perf_timer();
   print_perf_timer2();
-
+  #endif
   
 }

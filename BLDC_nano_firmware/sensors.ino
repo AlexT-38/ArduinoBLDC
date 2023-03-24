@@ -4,12 +4,12 @@
  */
 #define SESNOR_SIM
 
-static const byte sensor_seq[] = { 0b001, 0b011, 0b010, 0b110, 0b100, 0b101};
+const byte sensor_seq[] = { 0b001, 0b011, 0b010, 0b110, 0b100, 0b101};
 static const byte sensor_decode[] = { 0xFF, 0, 2, 1, 4, 5, 3, 0xFF };
 byte sensor_position;
 
-static unsigned int interval_us;
-unsigned int last_sensor_change_time_us = 0;
+unsigned int interval_us;
+//unsigned int last_sensor_change_time_us = 0;
 
 // map sensor position to sin wave positions for each phase
 #define SPHASE(n)  (sin_table_size*n/6)
@@ -18,16 +18,16 @@ unsigned int start_phase1_step[6] = {SPHASE(0),SPHASE(1),SPHASE(2),SPHASE(3),SPH
 /* adjust phase angle to control the motor */
 unsigned int phase_offset = 0;
 
-
+#define SENSOR_PIN      A0
 #define SENSOR_DDR      DDRC
 #define SENSOR_PINS     PINC
 #define SENSOR_PORT     PORTC
 #define SENSOR_PIN0     PORTC0
 #define SENSOR_MASK     (_BV(SENSOR_PIN0)|_BV(SENSOR_PIN0+1)|_BV(SENSOR_PIN0+2))
 
-#define SENSOR_vect     PCINT0_vect
+#define SENSOR_vect     PCINT1_vect
 #define SENSOR_PCMSK    PCMSK1
-#define SENSOR_PCIE     PCIE1
+#define SENSOR_PCIE     _BV(PCIE1)
 
 #define SENSOR_EN()     (PCICR |= SENSOR_PCIE)
 #define SENSOR_DIS()    (PCICR &= ~SENSOR_PCIE)
@@ -54,25 +54,32 @@ void sensors_init()
   SENSOR_PCMSK = SENSOR_MASK;
   //enable sensor interrupt
   SENSOR_EN();
-}
 
-void sensor_sim(unsigned int interval_us)
+}
+static byte sim_processed = true;
+void sensor_sim(unsigned int set_interval_us)
 {
-  if(interval_us == 0) return;
+  if((set_interval_us == 0) | !sim_processed) return;
   #ifdef SESNOR_SIM
   static unsigned int last_time_us = 0;
   static byte sequence_idx = 0;
   unsigned int this_time_us = micros();
-  if((this_time_us-last_time_us) > interval_us)
+  
+  //this_time_us = tmr1_time_us; //use the measured time to time the simulation
+  if((sensor_position == 0xff) | ((this_time_us-last_time_us) > set_interval_us))
   {
+    sim_processed = false;
+    
     byte port = SENSOR_PORT;
     port &= ~SENSOR_MASK;
     port |= (sensor_seq[sequence_idx])<<SENSOR_PIN0;
     SENSOR_PORT = port;
 
-    Serial.print(" SQ: "); Serial.println(0x10|GET_SENSOR(),BIN);
+    //Serial.print(" SQ: "); Serial.println(0x10|GET_SENSOR(),BIN);
     if(++sequence_idx >= 6) sequence_idx = 0;
     last_time_us = this_time_us;
+    togLED();
+    
   }
   #endif 
 }
@@ -83,7 +90,7 @@ void sensor_sim(unsigned int interval_us)
  *  may turn out to be required
  *  to keep the isr tight
  */
-static byte performance_timer2 = 0;
+ byte performance_timer2 = 0;
 static bool do_perf_timer2_print = false;
 void print_perf_timer2()
 {
@@ -93,25 +100,32 @@ void print_perf_timer2()
     unsigned int this_time_ms=millis();
     if((this_time_ms- last_time_ms) >REPORT_TIME_ms )
     {
-      Serial.print("Perf2: ");
-      Serial.println(performance_timer2);
+      last_time_ms = 0;
+      last_time_ms= this_time_ms;
+      Serial.print("Perf2(us): ");    Serial.println(TMR1_TCK_TIME_us(performance_timer2));
       do_perf_timer2_print = false;
     }
   }
 }
-/* pin change interrupt doesnt seem to be working... */
-ISR(SENSOR_vect)//, ISR_NAKED)
+
+ISR(PCINT1_vect, ISR_ALIASOF(PCINT0_vect));
+ISR(PCINT2_vect, ISR_ALIASOF(PCINT0_vect));
+ISR(PCINT0_vect)//, ISR_NOBLOCK)//, ISR_NAKED)
 {
   performance_timer2 = TCNT1;
+  interval_us = tmr1_time_us;// + TMR1_TCK_TIME_us(performance_timer2); //we can only use the fractional parts with fast pwm
   /* fetch the latest sensor value */
   sensor_position = sensor_decode[GET_SENSOR()];
   /* check for a valid state */
   if(sensor_position != 0xff)
   {
  
-    unsigned int time_now_us = micros();
-    interval_us = time_now_us - last_sensor_change_time_us;
-    last_sensor_change_time_us = time_now_us;
+    //unsigned int time_now_us = micros();
+    //interval_us = time_now_us - last_sensor_change_time_us;
+    //last_sensor_change_time_us = time_now_us;
+    
+    tmr1_time_us = 0;
+    sim_processed = true;
     /* clamp to range */
     interval_us = interval_us>STEP_RATE_MINIMUM_us?interval_us:STEP_RATE_MINIMUM_us;
     interval_us = interval_us<STEP_RATE_MAXIMUM_us?interval_us:STEP_RATE_MAXIMUM_us;
@@ -130,6 +144,9 @@ ISR(SENSOR_vect)//, ISR_NAKED)
 
     DRIVE_EN(); //ensure drive is enabled
     sin_en(); //ensure waveform generator is enabled
+
+    performance_timer2 = TCNT1 - performance_timer2;
+    do_perf_timer2_print = true;
   }
   else
   {
@@ -137,7 +154,7 @@ ISR(SENSOR_vect)//, ISR_NAKED)
     DRIVE_DIS();
     sin_dis();
   }
-  performance_timer2 = TCNT1 - performance_timer2;
-  do_perf_timer2_print = true;
+
   //reti();   //required with ISR_NAKED
+  
 }

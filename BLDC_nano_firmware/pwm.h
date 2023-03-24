@@ -7,16 +7,62 @@
    *  
    *  Timer1 prescaler is 0,1,8,64,256,1024,ext.v, ext.^
    *  Timer2 prescaler is 0,1,8,32,64,128,256,1024
-   *  these aren't all that useful
-   *  1 gives 62500Hz PWM frequncy
-   *  8 gives  7813Hz PWM frequncy, which is double the highest expected operating frequency
+   *   using phase correct pwm is prefered for motor control 
+   *   and also adds an extra x2 scale factor
    *  
-   *  base frequency can be reduced by 2 using phase correct pwm
+   *  in phase correct 8bit pwm, frequency is given by Fclk(io)/(N*510) 
+   *  rather than by Fclk(io)/(N*512)
+   *  so frequencies are 0.4% higher than the 'correct' frequencies
+   *  phase and frequency correct pwm is not available on TMR2
+   *  
+   *  (looking only at relavent settings...)
+   *  
+   *  Frequencies (Hz):
+   *  prescale  Tclk    fast      phase correct   phase & freq. correct
+   *  1         62.5ns  62500.0   31372.5         31250.0
+   *  8         0.5us   7812.5    3921.6          3906.3
+   *  64        4.0us   976.6     490.2           488.3
+   *  256       16.0us  244.1     122.5           122.1
+   *  
+   *  
+   *  PWM period (us):
+   *  fast pwm        phase correct   phase and freq correct
+   *  16.0            31.9            32.0
+   *  128.0           255.0           256.0
+   *  1024.0          2040.0          2048.0
+   *  4096.0          8160.0          8192.0
+   *  
+   *  PWM freq must be at least the max motor frequency 
+   *  and should be at least 4x, preferably 12x
+   *  to accurately describe the waveform.
+   *  
+   *  there is also a 1/2 pwm cycle delay between
+   *  setting the pwm and the output changing,
+   *  but this can be compensated for (in theory) by 
+   *  using a negative phase offset (more tables needed for this),
+   *  or by switching to direct control of the output pins by the
+   *  sensor state, but then may as well go for the simpler
+   *  control.
+   *  
+   *  the tables are based on 5600 rpm being the motor's higest.
+   *  so the maximum sensor step frequency we could see is 
+   *  maximum step rate, max rpm * poles/2 * 6
+   *  93.3hz * 2 * 6 = 1120Hz, 893us
+   *  
+   *  that's 3.5 pwm cycles per motor cycle at /8
+   *  or 28 cycles at /1
+   *  
+   *  
+   *  
+   *  at the other end of things, too high a frequency would mean
+   *  the shortest possible pulse time must be greater than the
+   *  switch on and switch off times of the fets
+   *  
    *  assuming FETs are PSMN3R4-30PL
    *  typ switching time, full cycle (delay, rise/fall), 40+73+59+28 = 200ns, 5Mhz
-   *  max pwm freq is clk/2, 6Mhz
-   *  so the fets are only just capable of turning on before turning off again
-   *  when running at 12Mhz
+   *  shortest pwm pulse is  2/clk = 125ns, 8Mhz
+   *  these fets may not be fast enough, but they're also old and better fets are probably available
+   *  
    *  
    *  and the fet drivers, ir2112?
    *  typ rise/fall times are 80 and 40
@@ -59,8 +105,19 @@
 #define TMR_INTus_122Hz    8192
 #define TMR_INTus_31Hz     32768
 
+#define TMR_TCKus_31kHz(t)    (t>>3)
+#define TMR_TCKus_3906Hz(t)   (t)
+#define TMR_TCKus_1953Hz(t)   (t<<1)
+#define TMR_TCKus_977Hz(t)    (t<<2)
+#define TMR_TCKus_244Hz(t)    (t<<3)
+#define TMR_TCKus_122Hz(t)    (t<<4)
+#define TMR_TCKus_31Hz(t)     (t<<7)
+
 #define TMR1_PRESCALE       TMR1_PRESCALE_3906Hz
 #define TMR2_PRESCALE       TMR2_PRESCALE_3906Hz
+
+#define TMR1_OVF_TIME_us    TMR_INTus_3906Hz
+#define TMR1_TCK_TIME_us(tk)    TMR_TCKus_3906Hz(tk)
 
   // mask bit b in int m
   #define MASK(b,m) ((m)&_BV(b))
@@ -103,7 +160,7 @@
  *  logic high drives the low fet ('off')
  */
 
- #define TMR_COM 3
+ #define TMR_COM 2
  #define TMR_COM_VREF 2
 
  #define TCP(r,b)  SELECT(r,b,TMR_COM)
@@ -135,16 +192,25 @@
    #define OC2B_port PORTD
    #define OC2B_pin  PORTD3
 
+  //to set or unset a bit mask in a register, multiply the bit mask by the set value, xor with target, and again, but masking the target bit
+  //Register, bit Mask, State
+  #define SET_TO(r, m, s) r ^= ((r) ^ ((m)*(s))) & (m)
+  
      #define OC1A_EN() TCCR1A |= (TMR1_COMA)
   #define OC1A_DIS() TCCR1A &= ~(TMR1_COMA)
+  #define OC1A_SET(s) SET_TO(TCCR1A, TMR1_COMA, s)
+  
   #define OC1B_EN() TCCR1A |= (TMR1_COMB)
   #define OC1B_DIS() TCCR1A &= ~(TMR1_COMB)
+  #define OC1B_SET(s) SET_TO(TCCR1A, TMR1_COMB, s)
 
   #define OC2A_EN() TCCR2A |= (TMR2_COMA)
   #define OC2A_DIS() TCCR2A &= ~(TMR2_COMA)
+  #define OC2A_SET(s) SET_TO(TCCR2A, TMR2_COMA, s)
+  
   #define OC2B_EN() TCCR2A |= (TMR2_COMB)
   #define OC2B_DIS() TCCR2A &= ~(TMR2_COMB)
-
+  #define OC2B_SET(s) SET_TO(TCCR2A, TMR2_COMB, s)
 
     #define TMR1_OFFSET 2  //set this ensure TMR1 and TMR2 overflow by the same amount - measure by having one tof set the led, and one clear it, adjust until it switches from mostly on to mostly off, with timer2 having the off command
 
