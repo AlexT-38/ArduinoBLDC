@@ -43,17 +43,27 @@
  */
 
 
-#include "tables.h"
-#include "pwm.h"
+
 
 #define setBIT(port, pin) port|=_BV(pin)
 #define clrBIT(port, pin) port&=~_BV(pin)
 #define togBIT(port, pin) port^=_BV(pin)
 
+/* serial report flags */
 #define REPORT_TIME_ms 100
 
 //#define PERF_REPORT_TOGETHER
 //#define PERF_REPORT
+
+//#define DO_REPORT_SIN
+
+/* operation control flags */
+#define SYNC_WAVE //syncronise the output waveform to the input sensor edge
+#define PWM_DITHER //count the wave position at a higher resolution than the wave table
+
+#include "tables.h"
+#include "pwm.h"
+
 
 
 static byte led = 0;
@@ -70,7 +80,7 @@ static unsigned int pwm2 = 0;
 static unsigned int pwm3 = 0;
 static byte do_report_sin = false;
 static byte pwm_max = 255;
-static unsigned int sim_interval_us = 20000;
+static unsigned int sim_interval_us = STEP_RATE_MAXIMUM_us;
 static unsigned int tmr1_time_tck = 0;
 
 
@@ -115,9 +125,11 @@ void setup()
   
 }
 extern unsigned int interval_us;
+extern unsigned int interval_tck;
 extern const byte sensor_seq[];
 extern byte sensor_position;
 extern byte pwm_max;
+extern unsigned int sin_pos1_frac;
 
 #ifdef PERF_REPORT
 extern byte performance_timer2, performance_timer;
@@ -130,29 +142,47 @@ void loop() {
   {
     //togLED();
     //togDBG();
+    unsigned int interval_tck_ = interval_tck;
+    unsigned int interval_us_ = interval_us;
+    unsigned int sin_pos1_ = sin_pos1;
+    byte sin_rate_ = sin_rate;
+    #ifdef PWM_DITHER
+    unsigned int sin_pos1_frac_ = sin_pos1_frac;
+    #endif
+    byte pwm1_ = pwm1;
+    byte pwm2_ = pwm2;
+    byte pwm3_ = pwm3;
+    byte pwm_max_ = pwm_max;
+    byte sensor_position_ = sensor_position;
+    
+    
     Serial.println();
     Serial.println("-------------------");
     Serial.print("sim interval(us): ");Serial.println(sim_interval_us);
-    Serial.print("tmr1_time_tck: ");Serial.println(tmr1_time_tck);
+    Serial.print("interval(tck): ");Serial.println(interval_tck_);
+    Serial.print("interval(us): ");Serial.println(interval_us_);
+    Serial.print("RPM: ");Serial.println(RPM(interval_tck_));
+    Serial.println();
     
-    Serial.print("interval(us): ");Serial.println(interval_us);
-    Serial.print("do_sin: ");Serial.println(do_sin);
-    Serial.print("sin_pos1: ");Serial.println(sin_pos1);
-    Serial.print("sin_rate: ");Serial.println(sin_rate);
-    Serial.print("pwm_max: ");Serial.println(pwm_max);
-    Serial.print("pwm1: ");Serial.println(pwm1);
-    Serial.print("pwm2: ");Serial.println(pwm2);
-    Serial.print("pwm3: ");Serial.println(pwm3);
-    byte sensor_bits = sensor_seq[sensor_position];
+    //Serial.print("do_sin: ");Serial.println(do_sin); 
+    Serial.print("sin_pos1: ");Serial.println(sin_pos1_);
+    Serial.print("sin_rate: ");Serial.println(sin_rate_);
+    #ifdef PWM_DITHER
+    //Serial.print("sin_pos1 (whole): "); Serial.println(sin_pos1_frac_ >> SIN_RATE_SCALE_BITS);
+    Serial.print("sin_pos1 (frac): "); Serial.println(sin_pos1_frac_ & SIN_RATE_MASK);
+    Serial.print("sin_rate (whole): ");Serial.println(sin_rate_ >> SIN_RATE_SCALE_BITS);
+    Serial.print("sin_rate (frac): "); Serial.println(sin_rate_ & SIN_RATE_MASK);
+    #endif
+    
+    Serial.print("pwm_max: ");Serial.println(pwm_max_);
+    Serial.print("pwm1: ");Serial.println(pwm1_);
+    Serial.print("pwm2: ");Serial.println(pwm2_);
+    Serial.print("pwm3: ");Serial.println(pwm3_);
+    byte sensor_bits = sensor_seq[sensor_position_];
     Serial.print("spos1: ");Serial.println((sensor_bits&1)!=0);
     Serial.print("spos2: ");Serial.println((sensor_bits&2)!=0);
     Serial.print("spos3: ");Serial.println((sensor_bits&4)!=0);
-    Serial.print("sensor_position: ");Serial.println(sensor_position);
-    //sanity check sensor:
-    //sensor_bits = PORTC&7;
-    //Serial.print("spin1: ");Serial.println((sensor_bits&1)!=0);
-    //Serial.print("spin2: ");Serial.println((sensor_bits&2)!=0);
-    //Serial.print("spin3: ");Serial.println((sensor_bits&4)!=0);
+    Serial.print("sensor_position: ");Serial.println(sensor_position_);
     
     Serial.println();
 #ifdef PERF_REPORT

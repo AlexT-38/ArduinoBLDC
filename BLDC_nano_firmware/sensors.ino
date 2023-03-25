@@ -9,6 +9,7 @@ static const byte sensor_decode[] = { 0xFF, 0, 2, 1, 4, 5, 3, 0xFF };
 byte sensor_position;
 
 unsigned int interval_us;
+unsigned int interval_tck;
 //unsigned int last_sensor_change_time_us = 0;
 
 // map sensor position to sin wave positions for each phase
@@ -131,23 +132,12 @@ ISR(PCINT0_vect)
   if(sensor_position != 0xff)
   {
  
-    //unsigned int time_now_us = micros();
-    //interval_us = time_now_us - last_sensor_change_time_us;
-    //last_sensor_change_time_us = time_now_us;
-    
-    //tmr1_time_tck = 0;
+   
     #ifdef SESNOR_SIM
     sim_processed = true;
     #endif
-    /* clamp to range */
-    //interval_us = interval_us>STEP_RATE_MINIMUM_us?interval_us:STEP_RATE_MINIMUM_us;
-    //interval_us = interval_us<STEP_RATE_MAXIMUM_us?interval_us:STEP_RATE_MAXIMUM_us;
-    /* fetch new pwm values */
-    //sin_rate = STEP_RATE_us((interval_us >> 2) + (interval_us >> 1)); //pwm appears to be advancing about 5x too quick... 
-    //6x infact. because time is now per sensor step, not per waveform cycle
-    //if(sin_rate == 0) sin_rate=1;
-    //pwm_max = PWM_RATE_us(interval_us);
 
+     // subtract the start offset
     if(tmr1_time_tck > STEP_RATE_MINIMUM_tck)
     {
       tmr1_time_tck -= STEP_RATE_MINIMUM_tck;
@@ -159,16 +149,32 @@ ISR(PCINT0_vect)
     
     sin_rate = STEP_RATE(tmr1_time_tck); 
     pwm_max = PWM_RATE(tmr1_time_tck);
+    
+    interval_tck = tmr1_time_tck;
+    
     tmr1_time_tck = 0;
     
     //synchronise the sin wave generators with the sensor position
-    sin_pos1 = start_phase1_step[sensor_position] + phase_offset;
+    #ifdef SYNC_WAVE
     
+    #ifndef PWM_DITHER
+    sin_pos1 = start_phase1_step[sensor_position] + phase_offset;
     //wrap phase around
     sin_pos1 = sin_pos1>sin_table_size?sin_pos1-sin_table_size:sin_pos1;
-
     //next seg position. note no wrap around
     sin_hold_pos = sin_pos1 + SEG_SIZE;
+    #else
+    
+    sin_pos1_frac = (start_phase1_step[sensor_position] + phase_offset)<<SIN_RATE_SCALE_BITS;
+    //wrap phase around
+    sin_pos1_frac = sin_pos1_frac>SIN_TABLE_SIZE_DITHERED?sin_pos1_frac-SIN_TABLE_SIZE_DITHERED:sin_pos1_frac;
+    //next seg position. note no wrap around
+    sin_hold_pos = sin_pos1_frac + (SEG_SIZE<<SIN_RATE_SCALE_BITS);
+    #endif
+    
+    #endif
+    
+    
 
     DRIVE_EN(); //ensure drive is enabled
     sin_en(); //ensure waveform generator is enabled

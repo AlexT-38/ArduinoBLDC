@@ -72,6 +72,15 @@
    *  or so I assume, as the turn on delay for a fet is time taken to charge the gate
    *  to the threshold voltage, and the rise time is that taken to charge the gate to saturation
    */
+
+#ifdef PWM_DITHER
+//dithering limits the maximum resolution of the sin table
+//sin table must be less than 65536>>SIN_RATE_SCALE_BITS long
+#define SIN_RATE_SCALE_BITS   3
+#define SIN_RATE_SCALE        (1<<SIN_RATE_SCALE_BITS)
+#define SIN_RATE_MASK         (SIN_RATE_SCALE-1)
+#endif
+
 //these frequencies are for phase correct pwm
 #define TMR1_PRESCALE_31kHz   1
 #define TMR1_PRESCALE_3906Hz  2

@@ -75,7 +75,7 @@ MAX_INT_us      = MEG/(MIN_FREQ_Hz*STEPS)   #maximum sensor step interval
 print("INT range (us):", MIN_INT_us, " - ",MAX_INT_us)
 
 UPDATE_RATE_Hz  = CLOCK_MHz*MEG/510
-print("PWM Freq(Hz):", UPDATE_RATE_Hz)
+print("PWM Freq(Hz):", round(UPDATE_RATE_Hz))
 RESOLUTION_us    = MEG/UPDATE_RATE_Hz  # number of microseconds per table index
 print("Resolution(us):", RESOLUTION_us)
 
@@ -91,9 +91,12 @@ print("Table MAX (tck/us):", TABLE_MAX_tck, ", ",TABLE_MAX_us)
 
 TABLE_RANGE_us    = TABLE_MAX_us-TABLE_MIN_us
 TABLE_SIZE_tck = TABLE_MAX_tck-TABLE_MIN_tck
-
 print("Table Range(us), Size(tck):", TABLE_RANGE_us, ", ",TABLE_SIZE_tck)
 
+# dithering limits the maximum resolution of the sine table
+# sine table must be less than 65536/PWM_DITHER_SCALE long
+PWM_DITHER_SCALE  =  8
+print("Dither scale:", PWM_DITHER_SCALE)
 
 def int2idx(interval):
     return ((interval-TABLE_MIN_us)/RESOLUTION_us)
@@ -113,7 +116,7 @@ one cycle takes interval_us * STEPS
 """
 cycle_us = intervals_us * STEPS
 
-table_rate = np.round(MEG * N_SAMPS / (UPDATE_RATE_Hz * cycle_us))
+table_rate = np.round(PWM_DITHER_SCALE * MEG * N_SAMPS / (UPDATE_RATE_Hz * cycle_us))
 #print("Rates: ", table_rate)
 
 #points = [int2idx(MIN_INT_us),int2idx(MAX_INT_us)]
@@ -159,11 +162,12 @@ plt.title("pwm table")
 plt.step(intervals_us, table_pwm)
 plt.show()
 
-print_table(intervals_us, table_pwm)
+#print_table(intervals_us, table_pwm)
 
 #FOR REFERENCE ONLY:
 table_rpm = MEG*MINUTE/(intervals_us*STEPS*POLE_PAIRS)
 plt.title("rpm table")
 plt.step(intervals_us, table_rpm)
 plt.show()
+print_table(intervals_us, table_rpm)
 #print("rpm table: ", table_rpm)

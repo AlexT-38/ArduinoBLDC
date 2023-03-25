@@ -46,7 +46,8 @@ void print_perf_timer()
 }
 
  #endif
- 
+
+unsigned int sin_pos1_frac = 0;
 ISR(TIMER1_OVF_vect)
 {
    #ifdef PERF_REPORT
@@ -77,10 +78,25 @@ ISR(TIMER1_OVF_vect)
   //count time
   if(tmr1_time_tck < STEP_RATE_MAXIMUM_tck) tmr1_time_tck++;
 
-  
-  //step through the sin tables for each phase, hold if the next step would take us past the next seg
-  if(do_sin && ((sin_pos1+sin_rate) < sin_hold_pos))
+  if(do_sin)
   {
+  //step through the sin tables for each phase, hold if the next step would take us past the next seg
+  #ifndef PWM_DITHER
+    if( (sin_pos1 + sin_rate) < sin_hold_pos )
+    {
+      //increment by rate
+      sin_pos1 = sin_pos1 + sin_rate;
+  #else
+    #ifdef SYNC_WAVE
+    if ( (sin_pos1_frac + sin_rate) < sin_hold_pos )
+    #endif
+    {
+      
+      sin_pos1_frac += sin_rate;
+      if( sin_pos1_frac >= SIN_TABLE_SIZE_DITHERED ) sin_pos1_frac -= SIN_TABLE_SIZE_DITHERED;
+      sin_pos1 = sin_pos1_frac >>SIN_RATE_SCALE_BITS;   
+  #endif
+    
     /* we need some way of syncing with the sensor state changes
      *  this basically means jumping ahead if we are lagging behind
      *  or stopping the sinwave until the rotor catches up
@@ -92,39 +108,42 @@ ISR(TIMER1_OVF_vect)
      *  this is handled in sensors tab
      *  
      */
-   
-    //increment by rate
-    sin_pos1 = sin_pos1 + sin_rate;
-    sin_pos2 = sin_pos1 + SEG_OFFSET;
-    sin_pos3 = sin_pos2 + SEG_OFFSET;
-
-    /* we can increase performance slightly by tabulating 2 whole sine waves,
-     * this would mean only needing to check for loop back on 1 channel
-     */
-    //loop back to the start on overflow
-    #define SIN_MOD(x) if(x>=sin_table_size) x-=sin_table_size
-    SIN_MOD(sin_pos1);
-    SIN_MOD(sin_pos2);
-    SIN_MOD(sin_pos3);
-
-    // fetch the next pwm values from the table
-    pwm1 = SIN(sin_pos1);
-    pwm2 = SIN(sin_pos2);
-    pwm3 = SIN(sin_pos3);
-
-    //multiply each pwm value by the maximum
-    #define MUL8(a,b) (((a*b)+b)>>8)
-    pwm1 = MUL8(pwm1, pwm_max);
-    pwm2 = MUL8(pwm2, pwm_max);
-    pwm3 = MUL8(pwm3, pwm_max);
-
-   
-    //do_report_sin = true;
-
-    #ifdef PERF_REPORT
-    performance_timer = TCNT1 - performance_timer;
-    do_perf_timer_print = true;
-    #endif
+ 
+      sin_pos2 = sin_pos1 + SEG_OFFSET;
+      sin_pos3 = sin_pos2 + SEG_OFFSET;
+  
+      /* we can increase performance slightly by tabulating 2 whole sine waves,
+       * this would mean only needing to check for loop back on 1 channel
+       */
+      //loop back to the start on overflow
+      
+      #define SIN_MOD(x) if(x>=sin_table_size) x-=sin_table_size
+      #ifndef PWM_DITHER
+      SIN_MOD(sin_pos1); //when dithering, sin_pos1_frac is already wrapped around
+      #endif
+      SIN_MOD(sin_pos2);
+      SIN_MOD(sin_pos3);
+  
+      // fetch the next pwm values from the table
+      pwm1 = SIN(sin_pos1);
+      pwm2 = SIN(sin_pos2);
+      pwm3 = SIN(sin_pos3);
+  
+      //multiply each pwm value by the maximum
+      #define MUL8(a,b) (((a*b)+b)>>8)
+      pwm1 = MUL8(pwm1, pwm_max);
+      pwm2 = MUL8(pwm2, pwm_max);
+      pwm3 = MUL8(pwm3, pwm_max);
+  
+      #ifdef DO_REPORT_SIN
+      do_report_sin = true;
+      #endif
+  
+      #ifdef PERF_REPORT
+      performance_timer = TCNT1 - performance_timer;
+      do_perf_timer_print = true;
+      #endif
+    }
   }
   else
   {
