@@ -140,7 +140,8 @@ ISR(PCINT0_vect)
     interval_us = interval_us>STEP_RATE_MINIMUM_us?interval_us:STEP_RATE_MINIMUM_us;
     interval_us = interval_us<STEP_RATE_MAXIMUM_us?interval_us:STEP_RATE_MAXIMUM_us;
     /* fetch new pwm values */
-    sin_rate = STEP_RATE_us(interval_us);
+    sin_rate = STEP_RATE_us(interval_us)>>2; //pwm appears to be advancing about 5x too quick
+    if(sin_rate == 0) sin_rate=1;
     pwm_max = PWM_RATE_us(interval_us);
 
     //synchronise the sin wave generators with the sensor position
