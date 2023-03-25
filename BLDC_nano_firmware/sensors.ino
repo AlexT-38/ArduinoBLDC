@@ -78,7 +78,7 @@ void sensor_sim(unsigned int set_interval_us)
     //Serial.print(" SQ: "); Serial.println(0x10|GET_SENSOR(),BIN);
     if(++sequence_idx >= 6) sequence_idx = 0;
     last_time_us = this_time_us;
-    togLED();
+    //togLED();
     
   }
   #endif 
@@ -89,7 +89,11 @@ void sensor_sim(unsigned int set_interval_us)
  *  and simply using the segment time without averaging
  *  may turn out to be required
  *  to keep the isr tight
+ *  
+ *  ISR measured as 8.67us
  */
+ #ifdef PERF_REPORT
+
  byte performance_timer2 = 0;
 static bool do_perf_timer2_print = false;
 void print_perf_timer2()
@@ -107,13 +111,19 @@ void print_perf_timer2()
     }
   }
 }
+#endif
 
 ISR(PCINT1_vect, ISR_ALIASOF(PCINT0_vect));
 ISR(PCINT2_vect, ISR_ALIASOF(PCINT0_vect));
-ISR(PCINT0_vect)//, ISR_NOBLOCK)//, ISR_NAKED)
+ISR(PCINT0_vect)
 {
+  #ifdef PERF_REPORT
   performance_timer2 = TCNT1;
-  interval_us = tmr1_time_us;// + TMR1_TCK_TIME_us(performance_timer2); //we can only use the fractional parts with fast pwm
+  #endif
+  
+  //setDBG();
+  togLED();
+  interval_us = tmr1_time_us; //tmr1 now limited to 255us resolution
   /* fetch the latest sensor value */
   sensor_position = sensor_decode[GET_SENSOR()];
   /* check for a valid state */
@@ -145,8 +155,10 @@ ISR(PCINT0_vect)//, ISR_NOBLOCK)//, ISR_NAKED)
     DRIVE_EN(); //ensure drive is enabled
     sin_en(); //ensure waveform generator is enabled
 
+    #ifdef PERF_REPORT
     performance_timer2 = TCNT1 - performance_timer2;
     do_perf_timer2_print = true;
+    #endif
   }
   else
   {
@@ -154,7 +166,5 @@ ISR(PCINT0_vect)//, ISR_NOBLOCK)//, ISR_NAKED)
     DRIVE_DIS();
     sin_dis();
   }
-
-  //reti();   //required with ISR_NAKED
-  
+  //clrDBG();
 }

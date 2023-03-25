@@ -10,39 +10,36 @@
   2000VA target capacity
   48V bus voltage
   42A nominal motor current
-  6000rpm maximum angular speed
+  6000rpm absolute maximum angular speed
   hall sensor input
   no. of poles is unkown, presumed to be 4
 
-  maximum step rate, max rpm * poles/2 * 6
-  100hz * 2 * 6 = 1200Hz, 832us
+  waveform output frequency is rpm/60 * poles/2
+  max Fwave = 200Hz
+  min Twave = 5000us
 
+  there are six steps in each rotation
+  min Tstep = 833us
   
-
-  pwm frequency needs to be at least 4x this, ie >=9600Hz
-  8 bit pwm control should be sufficient for this simple system
-  giving a base timer frequency of >=2.46MHz
-
-  atmega328p timer0 output compare overlaps with analog comparataor inputand i s used for millis()
-
+  with Fpwm = 3921.6Hz,
+  there are 3.27 pwm updates per step
+  
+  with Fpwm = 31kHz,
+  there are 26.14 pwm updates per step
+  
+  
   OC1A, OC1B and OC2A are grouped, so these will be the pwm outputs
 
   OC2B will set the current limit reference voltage
 
   current measurment will be by resistors in each leg of the inverter
   each resistor 's voltage will be offset and amlipfied
-  an opamp with a minimum common mode voltage of Vss/0v is required
-  the KA258 meets this requirement
-
+  
   use ir2112 high side fet drivers
 
-  torque control by current limiting
-  current limiting using the controller's built in analog comparator
-  when measured current exceeds a threshold, set by a spare pwm channel
-  pwm is forced to switch, alternatively the non pwm phase stops conducting
-  so long as rpm, and thus back emf is kept below the supply bus voltage
-  so that the body diode doesnt conduct
-  otherwise, the fet should be left on and pwm set to max
+  torque control by adjusting output phase
+  this first requires that the output waveform
+  is synchronised to the back emf waveform
  */
 
 
@@ -54,6 +51,10 @@
 #define togBIT(port, pin) port^=_BV(pin)
 
 #define REPORT_TIME_ms 100
+
+//#define PERF_REPORT_TOGETHER
+//#define PERF_REPORT
+
 
 static byte led = 0;
 static byte button = 0;
@@ -83,6 +84,15 @@ void setup()
 #define clrLED() clrBIT(LED_port, LED_pin)
 #define togLED() togBIT(LED_port, LED_pin)
   pinMode(pin_LED,OUTPUT);
+
+#define pin_DBG 12    //output pin for dbg, isr timing, etc
+#define DBG_port PORTB
+#define DBG_pin PORTB4
+#define setDBG() setBIT(DBG_port, DBG_pin)
+#define clrDBG() clrBIT(DBG_port, DBG_pin)
+#define togDBG() togBIT(DBG_port, DBG_pin)
+  pinMode(pin_DBG,OUTPUT);
+  digitalWrite(pin_DBG, HIGH);
   
 #define pin_SD 8    //inverter shut down pin
 #define SD_port PORTB
@@ -107,13 +117,19 @@ void setup()
 extern unsigned int interval_us;
 extern const byte sensor_seq[];
 extern byte sensor_position;
-extern byte pwm_max, performance_timer2, performance_timer;
-#define PERF_REPORT_TOGETHER
+extern byte pwm_max;
+
+#ifdef PERF_REPORT
+extern byte performance_timer2, performance_timer;
+#endif
+static byte do_report = true;
+
 void loop() {
   static int led_counter = 0;
-  if(!++led_counter)
+  if(!++led_counter && do_report)
   {
     //togLED();
+    //togDBG();
     Serial.println();
     Serial.println("-------------------");
     Serial.print("sim interval(us): ");Serial.println(sim_interval_us);
@@ -137,13 +153,14 @@ void loop() {
     //Serial.print("spin3: ");Serial.println((sensor_bits&4)!=0);
     
     Serial.println();
-
+#ifdef PERF_REPORT
     #ifdef PERF_REPORT_TOGETHER
+    if(performance_timer2 > 127) performance_timer2 = 256-performance_timer2;
     Serial.print("Perf1 (us): ");  Serial.println( TMR1_TCK_TIME_us(performance_timer)  );
     Serial.print("Perf2 (us): ");  Serial.println( TMR1_TCK_TIME_us(performance_timer2) );
     Serial.println();
     #endif
-    
+#endif    
   }
 
   /* simulate sensor signals */
@@ -188,7 +205,7 @@ void loop() {
     unsigned int this_time_s = millis();
     if (this_time_s-last_time_ms > 100){
       do_report_sin =false;
-      togLED();
+      //togLED();
       Serial.print("sin(idx1): [");
       Serial.print(sin_pos1);
       Serial.print("] ");
@@ -204,9 +221,10 @@ void loop() {
       Serial.println();
     }
   }
+  #ifdef PERF_REPORT
   #ifndef PERF_REPORT_TOGETHER
   print_perf_timer();
   print_perf_timer2();
   #endif
-  
+  #endif
 }

@@ -33,7 +33,7 @@
    *  4096.0          8160.0          8192.0
    *  
    *  PWM freq must be at least the max motor frequency 
-   *  and should be at least 4x, preferably 12x
+   *  and should be at least 6x, preferably 12x
    *  to accurately describe the waveform.
    *  
    *  there is also a 1/2 pwm cycle delay between
@@ -89,35 +89,27 @@
 #define TMR2_PRESCALE_122Hz   6
 #define TMR2_PRESCALE_31Hz    7
 
-#define TMR_FREQ_31kHz    31250.0
-#define TMR_FREQ_3906Hz   3906.25
-#define TMR_FREQ_1953Hz   1953.125
-#define TMR_FREQ_977Hz    976.5625
-#define TMR_FREQ_244Hz    244.140625
-#define TMR_FREQ_122Hz    122.0703125
-#define TMR_FREQ_31Hz     30.517578125
+#define TMR_FREQ_31kHz    31372.5
+#define TMR_FREQ_3906Hz   3921.6 
+#define TMR_FREQ_977Hz    490.2
+#define TMR_FREQ_122Hz    122.5
 
 #define TMR_INTus_31kHz    32
-#define TMR_INTus_3906Hz   256
-#define TMR_INTus_1953Hz   1024
-#define TMR_INTus_977Hz    2048
-#define TMR_INTus_244Hz    4096
-#define TMR_INTus_122Hz    8192
-#define TMR_INTus_31Hz     32768
+#define TMR_INTus_3906Hz   255
+#define TMR_INTus_977Hz    2040
+#define TMR_INTus_122Hz    8160
+
 
 #define TMR_TCKus_31kHz(t)    (t>>3)
 #define TMR_TCKus_3906Hz(t)   (t)
-#define TMR_TCKus_1953Hz(t)   (t<<1)
 #define TMR_TCKus_977Hz(t)    (t<<2)
-#define TMR_TCKus_244Hz(t)    (t<<3)
 #define TMR_TCKus_122Hz(t)    (t<<4)
-#define TMR_TCKus_31Hz(t)     (t<<7)
 
-#define TMR1_PRESCALE       TMR1_PRESCALE_3906Hz
-#define TMR2_PRESCALE       TMR2_PRESCALE_3906Hz
+#define TMR1_PRESCALE         TMR1_PRESCALE_31kHz
+#define TMR2_PRESCALE         TMR2_PRESCALE_31kHz
 
-#define TMR1_OVF_TIME_us    TMR_INTus_3906Hz
-#define TMR1_TCK_TIME_us(tk)    TMR_TCKus_3906Hz(tk)
+#define TMR1_OVF_TIME_us      TMR_INTus_31kHz
+#define TMR1_TCK_TIME_us(tk)  TMR_TCKus_31kHz(tk)
 
   // mask bit b in int m
   #define MASK(b,m) ((m)&_BV(b))

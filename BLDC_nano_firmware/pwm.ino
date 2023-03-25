@@ -21,21 +21,13 @@ void sin_dis()
  *  at the desired 31kHz base pwm rate, this interrupt would be called every 32us
  *  this is 512 instruction cycles (62.5ns each)
  *  
- *  this function should be able to complete in significantly less time,
- *  to account for other interrupts taking up cycles.
- *  infact, all interrupts must be capable of executing within this time
- *  
- *  presently typical timeforTIMER1_OVF is 14.5us
- *  which may be acceptable, but ideally would be lower
- *  
- *  it is occasionally 20.5us, which is probably TMR0 ISR,
- *  as we are measuring from actual TMR1 ovf, not start of the ISR
- *  
- *  measuring only the interupt, it is consistantly 26-27us.
- *  this could be reduce with some careful optimising,
- *  but realistically, this isn't practical.
+ *  measuring the ISR duration by toggling the LED pin
+ *  shows times of either ~6us or ~13us
+ *  which is much shorter than indicated by using tmr1
+ * 
  *  
  */
+ #ifdef PERF_REPORT
  byte performance_timer = 0;
 static bool do_perf_timer_print = false;
 void print_perf_timer()
@@ -52,9 +44,16 @@ void print_perf_timer()
     }
   }
 }
+
+ #endif
+ 
 ISR(TIMER1_OVF_vect)
 {
+   #ifdef PERF_REPORT
   performance_timer = TCNT1;
+ #endif
+  //only way to accurately measre interupt time is by toggling a pin
+  //setLED();
   
   // write the pwm values
   OCR1A = pwm1;
@@ -103,7 +102,7 @@ ISR(TIMER1_OVF_vect)
     sin_pos3 = sin_pos2 + SEG_OFFSET;
 
     /* we can increase performance slightly by tabulating 2 whole sine waves,
-     * this would mean only needing to check for loop back 
+     * this would mean only needing to check for loop back on 1 channel
      */
     //loop back to the start on overflow
     #define SIN_MOD(x) if(x>=sin_table_size) x-=sin_table_size
@@ -125,15 +124,17 @@ ISR(TIMER1_OVF_vect)
    
     //do_report_sin = true;
 
+    #ifdef PERF_REPORT
     performance_timer = TCNT1 - performance_timer;
     do_perf_timer_print = true;
+    #endif
   }
   else
   {
     //TIMSK1 &= ~_BV(TOIE1); //disable interrupt
   }
   
-
+  //clrLED();
 }
 
 void pwmInit()
@@ -149,9 +150,6 @@ void pwmInit()
   digitalWrite(pin_OC1B, TMR_COM&1);
   digitalWrite(pin_OC2A, TMR_COM&1);
   digitalWrite(pin_OC2A, TMR_COM_VREF&1);
-
-
-
 
 
   TCCR1A = T1M(WGM11,1) | T1M(WGM10,0);

@@ -1,14 +1,9 @@
 #ifndef __TABLES_H__
 #define __TABLES_H__
-//#include "pgmspace.h"
 
-/* resolution of TMR0, which will provide the basis for the step_rate and pwm_rate tables
- * should be less than or equal to the table resolution
- */
-#define TMR0_RES_us_LOG2  4
 /*
  * step rate is the number of sin table steps to advance by each pwm cycle
- * ideally this should be some sort of fixed point numerator/denominator value that allows incrments of n steps every m update cycles
+ * ideally this should be some sort of fixed point value that adds an extra step whenever the remainder rolls over
  * but for now it will be simply an integer number of steps each update
  * 
  * index is the time take to complete one full cycle from the sensor input, meaused over the last cycle each time the sensor input changes
