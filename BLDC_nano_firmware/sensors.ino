@@ -34,7 +34,7 @@ unsigned int phase_offset = 0;
 
 #define GET_SENSOR()    ((SENSOR_PINS&SENSOR_MASK) >> SENSOR_PIN0)
 
-
+#define STEPS_PER_CYCLE 6
 void sensors_init()
 {
   //set the sensor input pin config
@@ -65,7 +65,7 @@ void sensor_sim(unsigned int set_interval_us)
   static byte sequence_idx = 0;
   unsigned int this_time_us = micros();
   
-  //this_time_us = tmr1_time_us; //use the measured time to time the simulation
+  //this_time_us = tmr1_time_tck; //use the measured time to time the simulation
   if((sensor_position == 0xff) | ((this_time_us-last_time_us) > set_interval_us))
   {
     sim_processed = false;
@@ -123,7 +123,8 @@ ISR(PCINT0_vect)
   
   //setDBG();
   togLED();
-  interval_us = tmr1_time_us; //tmr1 now limited to 255us resolution
+  
+  interval_us = tmr1_time_tck * (TMR1_OVF_TIME_us);
   /* fetch the latest sensor value */
   sensor_position = sensor_decode[GET_SENSOR()];
   /* check for a valid state */
@@ -134,16 +135,32 @@ ISR(PCINT0_vect)
     //interval_us = time_now_us - last_sensor_change_time_us;
     //last_sensor_change_time_us = time_now_us;
     
-    tmr1_time_us = 0;
+    //tmr1_time_tck = 0;
+    #ifdef SESNOR_SIM
     sim_processed = true;
+    #endif
     /* clamp to range */
-    interval_us = interval_us>STEP_RATE_MINIMUM_us?interval_us:STEP_RATE_MINIMUM_us;
-    interval_us = interval_us<STEP_RATE_MAXIMUM_us?interval_us:STEP_RATE_MAXIMUM_us;
+    //interval_us = interval_us>STEP_RATE_MINIMUM_us?interval_us:STEP_RATE_MINIMUM_us;
+    //interval_us = interval_us<STEP_RATE_MAXIMUM_us?interval_us:STEP_RATE_MAXIMUM_us;
     /* fetch new pwm values */
-    sin_rate = STEP_RATE_us(interval_us)>>2; //pwm appears to be advancing about 5x too quick
-    if(sin_rate == 0) sin_rate=1;
-    pwm_max = PWM_RATE_us(interval_us);
+    //sin_rate = STEP_RATE_us((interval_us >> 2) + (interval_us >> 1)); //pwm appears to be advancing about 5x too quick... 
+    //6x infact. because time is now per sensor step, not per waveform cycle
+    //if(sin_rate == 0) sin_rate=1;
+    //pwm_max = PWM_RATE_us(interval_us);
 
+    if(tmr1_time_tck > STEP_RATE_MINIMUM_tck)
+    {
+      tmr1_time_tck -= STEP_RATE_MINIMUM_tck;
+    }
+    else
+    {
+      tmr1_time_tck = 0;
+    }
+    
+    sin_rate = STEP_RATE(tmr1_time_tck); 
+    pwm_max = PWM_RATE(tmr1_time_tck);
+    tmr1_time_tck = 0;
+    
     //synchronise the sin wave generators with the sensor position
     sin_pos1 = start_phase1_step[sensor_position] + phase_offset;
     

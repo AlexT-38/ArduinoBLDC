@@ -111,6 +111,8 @@
 #define TMR1_OVF_TIME_us      TMR_INTus_31kHz
 #define TMR1_TCK_TIME_us(tk)  TMR_TCKus_31kHz(tk)
 
+#define TMR1_RES_us_LOG2      5
+
   // mask bit b in int m
   #define MASK(b,m) ((m)&_BV(b))
   // select bit r  if bit b of int m is set

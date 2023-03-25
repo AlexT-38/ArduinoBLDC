@@ -75,11 +75,8 @@ ISR(TIMER1_OVF_vect)
   OC2A_SET(pwm3 != 0);
   */
   //count time
-  tmr1_time_us += TMR1_OVF_TIME_us;
-  if(tmr1_time_us > STEP_RATE_MAXIMUM_us)
-  {
-    tmr1_time_us = STEP_RATE_MAXIMUM_us;
-  }
+  if(tmr1_time_tck < STEP_RATE_MAXIMUM_tck) tmr1_time_tck++;
+
   
   //step through the sin tables for each phase, hold if the next step would take us past the next seg
   if(do_sin && ((sin_pos1+sin_rate) < sin_hold_pos))

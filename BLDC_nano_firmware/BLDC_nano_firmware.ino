@@ -71,7 +71,7 @@ static unsigned int pwm3 = 0;
 static byte do_report_sin = false;
 static byte pwm_max = 255;
 static unsigned int sim_interval_us = 20000;
-static unsigned int tmr1_time_us = 0;
+static unsigned int tmr1_time_tck = 0;
 
 
 void setup() 
@@ -133,6 +133,8 @@ void loop() {
     Serial.println();
     Serial.println("-------------------");
     Serial.print("sim interval(us): ");Serial.println(sim_interval_us);
+    Serial.print("tmr1_time_tck: ");Serial.println(tmr1_time_tck);
+    
     Serial.print("interval(us): ");Serial.println(interval_us);
     Serial.print("do_sin: ");Serial.println(do_sin);
     Serial.print("sin_pos1: ");Serial.println(sin_pos1);
