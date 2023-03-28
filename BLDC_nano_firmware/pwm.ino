@@ -1,6 +1,11 @@
 /***************************************
  * handles the generation of pwm signals
  */
+void tog_sin()
+{
+  if(!do_sin) {sin_en();}
+  else {sin_dis();}
+}
 /* enable the sin wave generator */
 void sin_en()
 {
