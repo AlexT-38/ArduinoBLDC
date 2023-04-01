@@ -121,8 +121,9 @@ void setup()
 
   Serial.begin(1000000);
   Serial.setTimeout(1);
-  Serial.println("boop");
+  Serial.println(F("ArduinoBLDC v0.1"));
 
+  init_phase_correction();
   sensors_init();
   pwmInit();
 
@@ -167,55 +168,55 @@ byte report()
         break;
       case 1:
         Serial.println();
-        Serial.println("-------------------");
+        Serial.println(F("-------------------"));
         break;
       case 2:
-        Serial.print("sim interval(us): ");Serial.println(sim_interval_us);
-        Serial.print("interval(tck): ");Serial.println(interval_tck_);
+        Serial.print(F("sim interval(us): "));Serial.println(sim_interval_us);
+        Serial.print(F("interval(tck): "));Serial.println(interval_tck_);
         break;
       case 3:
-        Serial.print("interval(us): ");Serial.println(interval_us_);
-        Serial.print("RPM: ");Serial.println(RPM(interval_tck_));
+        Serial.print(F("interval(us): "));Serial.println(interval_us_);
+        Serial.print(F("RPM: "));Serial.println(RPM(interval_tck_));
         Serial.println();
         break;
       case 4:
-        Serial.print("sin_pos1: ");Serial.println(sin_pos1_);
-        Serial.print("sin_rate: ");Serial.println(sin_rate_);      
+        Serial.print(F("sin_pos1: "));Serial.println(sin_pos1_);
+        Serial.print(F("sin_rate: "));Serial.println(sin_rate_);      
         break;
       case 5:
         #ifdef PWM_DITHER
-        //Serial.print("sin_pos1 (whole): "); Serial.println(sin_pos1_frac_ >> SIN_RATE_SCALE_BITS);
-        Serial.print("sin_pos1 (frac): "); Serial.println(sin_pos1_frac_ & SIN_RATE_MASK);
-        Serial.print("sin_rate (whole): ");Serial.println(sin_rate_ >> SIN_RATE_SCALE_BITS);
-        Serial.print("sin_rate (frac): "); Serial.println(sin_rate_ & SIN_RATE_MASK);
+        //Serial.print("sin_pos1 (whole): ")); Serial.println(sin_pos1_frac_ >> SIN_RATE_SCALE_BITS);
+        Serial.print(F("sin_pos1 (frac): ")); Serial.println(sin_pos1_frac_ & SIN_RATE_MASK);
+        Serial.print(F("sin_rate (whole): "));Serial.println(sin_rate_ >> SIN_RATE_SCALE_BITS);
+        Serial.print(F("sin_rate (frac): ")); Serial.println(sin_rate_ & SIN_RATE_MASK);
         #endif
         break;
       case 6:
-        Serial.print("pwm_max: ");Serial.println(pwm_max_);
-        Serial.print("pwm1: ");Serial.println(pwm1_);      
+        Serial.print(F("pwm_max: "));Serial.println(pwm_max_);
+        Serial.print(F("pwm1: "));Serial.println(pwm1_);      
         break;
       case 7:
-        Serial.print("pwm2: ");Serial.println(pwm2_);
-        Serial.print("pwm3: ");Serial.println(pwm3_);      
+        Serial.print(F("pwm2: "));Serial.println(pwm2_);
+        Serial.print(F("pwm3: "));Serial.println(pwm3_);      
         break;
       case 8:
         {
           byte sensor_bits = sensor_seq[sensor_position_];
-          Serial.print("spos1: ");Serial.println((sensor_bits&1)!=0);
-          Serial.print("spos2: ");Serial.println((sensor_bits&2)!=0); 
-          Serial.print("spos3: ");Serial.println((sensor_bits&4)!=0);
+          Serial.print(F("spos1: "));Serial.println((sensor_bits&1)!=0);
+          Serial.print(F("spos2: "));Serial.println((sensor_bits&2)!=0); 
+          Serial.print(F("spos3: "));Serial.println((sensor_bits&4)!=0);
         }
         break;
       case 9:
-        Serial.print("sensor_position: ");Serial.println(sensor_position_);
+        Serial.print(F("sensor_position: "));Serial.println(sensor_position_);
         Serial.println();
         break;
       case 10:
         #ifdef PERF_REPORT
          #ifdef PERF_REPORT_TOGETHER
           if(performance_timer2 > 127) performance_timer2 = 256-performance_timer2;
-          Serial.print("Perf1 (us): ");  Serial.println( TMR1_TCK_TIME_us(performance_timer)  );
-          Serial.print("Perf2 (us): ");  Serial.println( TMR1_TCK_TIME_us(performance_timer2) );
+          Serial.print(F("Perf1 (us): "));  Serial.println( TMR1_TCK_TIME_us(performance_timer)  );
+          Serial.print(F("Perf2 (us): "));  Serial.println( TMR1_TCK_TIME_us(performance_timer2) );
           Serial.println();
          #endif
         #endif      
@@ -254,17 +255,19 @@ void loop() {
   }
 
   /* check for serial input */
-  #define RESPONSE_SIZE 32
+  #define RESPONSE_SIZE 160
   static char response[RESPONSE_SIZE] = ">";
   static byte response_size = 1;
   #define RESPONSE response[response_size++]
   #define RESPONSE_NEXT &response[response_size]
+  #define RESPOND_PARAM(parameter) itoa(parameter, RESPONSE_NEXT, 10); response_size = strlen(response)
   static byte respond = false;
   #define NO_COMMAND '\0'
   static char command = NO_COMMAND;
   static byte parse_param = false;
   static int parameter = 0;
   static byte parse_command = false;
+  static byte help_line = 0;
   enum SS
   {
     SS_IDLE,      // check for serial input and perform serial reports
@@ -306,17 +309,17 @@ void loop() {
           if (this_time_s-last_time_ms > 100){
             do_report_sin =false;
             //togLED();
-            Serial.print("sin(idx1): [");
+            Serial.print(F("sin(idx1): ["));
             Serial.print(sin_pos1);
-            Serial.print("] ");
+            Serial.print(F("] "));
             Serial.println(pwm1);
-            Serial.print("sin(idx2): [");
+            Serial.print(F("sin(idx2): ["));
             Serial.print(sin_pos2);
-            Serial.print("] ");
+            Serial.print(F("] "));
             Serial.println(pwm2);
-            Serial.print("sin(idx3): [");
+            Serial.print(F("sin(idx3): ["));
             Serial.print(sin_pos3);
-            Serial.print("] ");
+            Serial.print(F("] "));
             Serial.println(pwm3);
             Serial.println();
           }
@@ -333,9 +336,14 @@ void loop() {
     case SS_COMMAND:                  // fetch the command from the input stream
       command = Serial.read();
       RESPONSE = command;
-      
+
+
+
       switch (command)
       {
+        case '?': //list commands
+          help_line = 0;
+          ser_stat = SS_RESPOND;
         case 'R': //toggle printing reports
           do_report = !do_report;
           RESPONSE = do_report?'1':'0';
@@ -356,6 +364,43 @@ void loop() {
           RESPONSE = DRIVE?'1':'0';
           ser_stat = SS_RESPOND;
           break;
+        case 'T': // report phase Correction Table id and freq, and list available
+          RESPOND_PARAM(table_id);
+          RESPONSE = '/';
+          RESPOND_PARAM(NO_PHASE_TABLES);
+          RESPONSE = ':';
+          RESPOND_PARAM(PHASE_TABLE_FREQ(table_id));
+          RESPONSE = 'H';
+          RESPONSE = 'z';
+          RESPONSE = '\n';
+          for(byte n = 0; n<NO_PHASE_TABLES; n++)
+          {
+            RESPOND_PARAM(n);
+            RESPONSE = '\t';
+          }
+          RESPONSE = '\n';
+          for(byte n = 0; n<NO_PHASE_TABLES; n++)
+          {
+            RESPOND_PARAM(PHASE_TABLE_FREQ(n));
+            RESPONSE = '\t';
+          }
+          ser_stat = SS_RESPOND;
+          break;
+        case 'P': // report current phase offset
+          RESPONSE = 'o';
+          RESPONSE = ':';
+          RESPOND_PARAM(phase_offset);
+          RESPONSE = ' ';
+          RESPONSE = 'O';
+          RESPONSE = ':';
+          RESPOND_PARAM(PHASE(interval_tck));
+          RESPONSE = ' ';
+          RESPONSE = 'T';
+          RESPONSE = ':';
+          RESPOND_PARAM((phase_offset + PHASE(interval_tck)));
+          ser_stat = SS_RESPOND;
+          break;
+        case 't': //set the phase correction table
         case 's': //set the simulation rate (us)
         case 'p': //set the phase offset
           ser_stat = SS_PARAM;
@@ -386,7 +431,7 @@ void loop() {
       
     case SS_PARAM:                              // fetch the parameter from the input stream
       parameter = Serial.parseInt(SKIP_NONE);
-      #define RESPOND_PARAM(parameter) itoa(parameter, RESPONSE_NEXT, 10); response_size = strlen(response)
+      
       RESPOND_PARAM(parameter);
       switch (command)
       {
@@ -399,7 +444,7 @@ void loop() {
           }
           else
           {
-            RESPONSE = '?';
+            RESPONSE = 'v';
           }
           break;
         case 'p': //phase offset in units of (360/sin_table_size)degrees (ie 0.09375)
@@ -407,7 +452,7 @@ void loop() {
           {
             RESPONSE = 'v';
           }
-          else if (parameter >= sin_table_size)
+          else if (parameter >= (int)sin_table_size)
           {
             RESPONSE = '^';
           }
@@ -425,16 +470,58 @@ void loop() {
             RESPOND_PARAM(sin_table_size);
             phase_offset = parameter;
           }
+        case 't': //set the phase correction table
+          if(parameter < 0)
+          {
+            RESPONSE = 'v';
+          }
+          else if (parameter >= NO_PHASE_TABLES)
+          {
+            RESPONSE = '^';
+          }
+          else
+          {
+            RESPONSE = 'O';
+            RESPONSE = 'K';
+            RESPONSE = '\n';
+            load_phase_table(parameter);
+            RESPOND_PARAM(PHASE_TABLE_FREQ(table_id));
+            RESPONSE = 'H';
+            RESPONSE = 'z';
+          }
       }
       ser_stat = SS_RESPOND;
       break;
       
     case SS_RESPOND:                // send the response to the input
-      RESPONSE = '\0';
-      Serial.println(response);
-      response_size = 0;
-      ser_stat = SS_IDLE;
-      RESPONSE = '>';
+      
+      
+      if(command == '?') 
+      {
+        switch(help_line++)
+        {
+          case 0:          Serial.println(F("'?' list commands")); break;
+          case 1:          Serial.println(F("'R' toggle printing reports")); break;
+          case 2:          Serial.println(F("'S' toggle simulation")); break;
+          case 3:          Serial.println(F("'W' toggle waveform generation")); break;
+          case 4:          Serial.println(F("'M' toggle motor drive")); break;
+          case 5:          Serial.println(F("'P' report current phase offset")); break;
+          case 6:          Serial.println(F("'T' report phase correction tables")); break;
+          case 7:          Serial.println(F("'t' set the phase correction table")); break;
+          case 8:          Serial.println(F("'s' set the simulation rate (us)")); break;
+          case 9:          Serial.println(F("'p' set the phase offset")); break;
+          case 10:          Serial.println();
+          default:         command = '\0'; break;
+        }
+      }
+      else
+      {
+        RESPONSE = '\0';
+        Serial.println(response);
+        response_size = 0;
+        ser_stat = SS_IDLE;
+        RESPONSE = '>';
+      }
       break;
   }
 }

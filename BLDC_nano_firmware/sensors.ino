@@ -158,14 +158,14 @@ ISR(PCINT0_vect)
     #ifdef SYNC_WAVE
     
     #ifndef PWM_DITHER
-    sin_pos1 = start_phase1_step[sensor_position] + phase_offset;
+    sin_pos1 = start_phase1_step[sensor_position] + phase_offset + PHASE(interval_tck);
     //wrap phase around
     sin_pos1 = sin_pos1>sin_table_size?sin_pos1-sin_table_size:sin_pos1;
     //next seg position. note no wrap around
     sin_hold_pos = sin_pos1 + SEG_SIZE;
     #else
     
-    sin_pos1_frac = (start_phase1_step[sensor_position] + phase_offset)<<SIN_RATE_SCALE_BITS;
+    sin_pos1_frac = (start_phase1_step[sensor_position] + phase_offset + PHASE(interval_tck))<<SIN_RATE_SCALE_BITS;
     //wrap phase around
     sin_pos1_frac = sin_pos1_frac>SIN_TABLE_SIZE_DITHERED?sin_pos1_frac-SIN_TABLE_SIZE_DITHERED:sin_pos1_frac;
     //next seg position. note no wrap around
